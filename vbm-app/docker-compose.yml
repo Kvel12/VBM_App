@@ -1,0 +1,60 @@
+version: "3.9"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# VBM App — Docker Compose
+#
+# Uso:
+#   docker-compose up --build          # primera vez
+#   docker-compose up                  # siguientes veces
+#   docker-compose down                # bajar
+#
+# Assets pesados (no están en git — copiar antes de levantar):
+#   backend/dartel_templates/  → Template_1.nii … Template_6.nii + Template_6_2mni.mat
+#   backend/models/            → spm12_cnn_v3.pth, svm_volumetric.pkl, nnunet_weights/
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: vbm_backend
+    ports:
+      - "8000:8000"
+    volumes:
+      # Assets pesados montados desde el host (no están en la imagen)
+      - ./backend/dartel_templates:/app/dartel_templates:ro
+      - ./backend/models:/app/models:ro
+      # Temporal de procesamiento (lectura/escritura)
+      - ./backend/tmp:/app/tmp
+    environment:
+      - SPM_STANDALONE_DIR=/opt/spm12_standalone
+      - MCR_DIR=/opt/mcr/v97
+      - ROBEX_DIR=/opt/ROBEX
+    # Sin GPU: comentar o eliminar el bloque deploy
+    # Con GPU NVIDIA: descomentar (requiere nvidia-container-toolkit en el host)
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: vbm_frontend
+    ports:
+      - "3000:80"       # Nginx sirve el build de React en el puerto 80 interno
+    depends_on:
+      - backend
+    restart: unless-stopped

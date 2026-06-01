@@ -1,0 +1,116 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# VBM App — Backend Dockerfile
+# Base: Ubuntu 22.04 LTS (compatible con MATLAB Runtime R2019b)
+# Incluye: SPM12 Standalone r7771, MATLAB Runtime v97, ROBEX, Python 3.11
+#
+# CPU por defecto. Si el host tiene GPU NVIDIA y nvidia-container-toolkit
+# instalado, Docker detecta la GPU automáticamente vía torch.cuda.is_available()
+# sin cambios en este Dockerfile.
+# ─────────────────────────────────────────────────────────────────────────────
+FROM ubuntu:22.04
+
+# Evitar prompts interactivos de apt
+ENV DEBIAN_FRONTEND=noninteractive
+ENV TZ=America/Bogota
+
+# ─── Dependencias del sistema ─────────────────────────────────────────────────
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    # Herramientas base
+    wget curl unzip ca-certificates \
+    # MATLAB Runtime R2019b requiere estas librerías
+    libxt6 libxmu6 libgl1 libglu1-mesa \
+    libxrender1 libxtst6 libxi6 \
+    # Para NIfTI / nibabel
+    zlib1g \
+    # Python 3.11
+    python3.11 python3.11-dev python3-pip \
+    # ROBEX
+    bc \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+# Python por defecto → python3.11
+RUN ln -sf /usr/bin/python3.11 /usr/bin/python3 \
+ && ln -sf /usr/bin/python3.11 /usr/bin/python
+
+# ─── MATLAB Runtime R2019b (v97) ──────────────────────────────────────────────
+# Requerido por SPM12 Standalone r7771 (compilado con MATLAB R2019b)
+# Tamaño: ~2.5 GB — se cachea en la capa de Docker
+ENV MCR_VERSION=R2019b
+ENV MCR_DIR=/opt/mcr/v97
+
+RUN mkdir -p /tmp/mcr_install && \
+    wget -q --show-progress \
+        "https://ssd.mathworks.com/supportfiles/downloads/R2019b/Release/9/deployment_files/installer/complete/glnxa64/MATLAB_Runtime_R2019b_Update_9_glnxa64.zip" \
+        -O /tmp/mcr_install/mcr.zip && \
+    unzip -q /tmp/mcr_install/mcr.zip -d /tmp/mcr_install && \
+    /tmp/mcr_install/install -mode silent -agreeToLicense yes \
+        -destinationFolder /opt/mcr && \
+    rm -rf /tmp/mcr_install
+
+# Variables de entorno requeridas por MCR
+ENV LD_LIBRARY_PATH="${MCR_DIR}/runtime/glnxa64:${MCR_DIR}/bin/glnxa64:${MCR_DIR}/sys/os/glnxa64:${LD_LIBRARY_PATH}"
+ENV XAPPLRESDIR="${MCR_DIR}/X11/app-defaults"
+
+# ─── SPM12 Standalone r7771 ───────────────────────────────────────────────────
+# Versión Standalone Linux que coincide con el SPM12 usado en entrenamiento
+ENV SPM_STANDALONE_DIR=/opt/spm12_standalone
+
+RUN mkdir -p ${SPM_STANDALONE_DIR} && \
+    wget -q --show-progress \
+        "https://www.fil.ion.ucl.ac.uk/spm/download/restricted/eldorado/spm12_r7771.zip" \
+        -O /tmp/spm12_standalone.zip && \
+    unzip -q /tmp/spm12_standalone.zip -d ${SPM_STANDALONE_DIR} && \
+    chmod +x ${SPM_STANDALONE_DIR}/run_spm12.sh && \
+    rm /tmp/spm12_standalone.zip
+
+# Variable de entorno para config.py
+ENV SPM_STANDALONE_DIR=${SPM_STANDALONE_DIR}
+ENV MCR_DIR=${MCR_DIR}
+
+# ─── ROBEX (skull stripping) ──────────────────────────────────────────────────
+ENV ROBEX_DIR=/opt/ROBEX
+
+RUN mkdir -p ${ROBEX_DIR} && \
+    wget -q --show-progress \
+        "https://www.nitrc.org/frs/download.php/5994/ROBEXv12.linux64.tar.gz" \
+        -O /tmp/robex.tar.gz && \
+    tar -xzf /tmp/robex.tar.gz -C /opt && \
+    chmod +x ${ROBEX_DIR}/runROBEX.sh && \
+    chmod +x ${ROBEX_DIR}/ROBEX && \
+    rm /tmp/robex.tar.gz
+
+ENV ROBEX_DIR=${ROBEX_DIR}
+
+# ─── Python: instalar dependencias ───────────────────────────────────────────
+WORKDIR /app
+COPY requirements.txt .
+
+# PyTorch CPU base — si hay GPU disponible en runtime, torch.cuda.is_available()
+# retorna True automáticamente sin reinstalar (el binario CPU soporta CUDA vía
+# nvidia-container-toolkit montado en runtime)
+# Para GPU dedicada: cambiar la línea de torch en requirements.txt a cu121
+RUN pip install --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt
+
+# ─── Código de la aplicación ──────────────────────────────────────────────────
+COPY app/ ./app/
+
+# Assets pesados: se montan como volúmenes en docker-compose.yml
+# No se copian al contenedor para mantener la imagen portable
+# - dartel_templates/  → /app/dartel_templates
+# - models/            → /app/models
+
+# ─── Directorio temporal de procesamiento ─────────────────────────────────────
+RUN mkdir -p /app/tmp && chmod 777 /app/tmp
+
+# ─── Entrypoint ───────────────────────────────────────────────────────────────
+EXPOSE 8000
+
+# --workers 1: SPM Standalone no es thread-safe entre workers
+# --timeout-keep-alive 300: jobs pueden tardar varios minutos
+CMD ["uvicorn", "app.main:app", \
+     "--host", "0.0.0.0", \
+     "--port", "8000", \
+     "--workers", "1", \
+     "--timeout-keep-alive", "300"]
