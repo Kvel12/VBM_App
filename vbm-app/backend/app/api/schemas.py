@@ -2,7 +2,7 @@
 schemas.py — Modelos Pydantic para request/response de la API
 """
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from typing import Optional, Literal
 from enum import Enum
 
@@ -20,6 +20,12 @@ class AnalysisMetadata(BaseModel):
     patient_name: Optional[str] = Field(None, description="Nombre del paciente")
     notes:        Optional[str] = Field(None, description="Notas clínicas")
     model:        ModelType     = Field(..., description="Pipeline a ejecutar")
+    use_robex:    bool          = Field(False, description=(
+        "Aplicar ROBEX skull stripping antes de SPM12. Por defecto False — "
+        "el pipeline de entrenamiento pasa la T1 cruda directamente a SPM12. "
+        "Activar solo si la T1 viene ya con cráneo eliminado o por elección "
+        "metodológica del usuario."
+    ))
 
 
 # ─── Respuesta de creación de job ─────────────────────────────────────────────
@@ -54,6 +60,10 @@ class JobStatusResponse(BaseModel):
 
 # ─── Resultado final ──────────────────────────────────────────────────────────
 class AnalysisResult(BaseModel):
+    # Los campos model_* colisionan con el namespace protegido de Pydantic v2
+    # ("model_*" suele ser reservado). Sin esto cada arranque imprime warnings.
+    model_config = ConfigDict(protected_namespaces=())
+
     # Predicción
     prediction:        Literal["epilepsy", "control"]
     confidence:        float = Field(ge=0.0, le=1.0)

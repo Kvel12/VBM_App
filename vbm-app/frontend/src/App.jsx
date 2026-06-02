@@ -16,11 +16,15 @@ const App = () => {
   const [model, setModel] = useState(null);
   const [info, setInfo] = useState({});
   const [file, setFile] = useState(null);
+  const [jobId, setJobId] = useState(null);
+  const [result, setResult] = useState(null);
 
   const reset = () => {
     setModel(null);
     setInfo({});
     setFile(null);
+    setJobId(null);
+    setResult(null);
     setScreen('home');
   };
 
@@ -91,9 +95,11 @@ const App = () => {
         {screen === 'upload' && (
           <UploadScreen
             model={model}
-            onStart={(i, f) => {
+            onStart={(i, f, newJobId) => {
               setInfo(i);
               setFile(f);
+              setJobId(newJobId);
+              setResult(null);
               setScreen('processing');
             }}
             onBack={() => setScreen('home')}
@@ -103,12 +109,17 @@ const App = () => {
           <ProcessingScreen
             model={model}
             info={info}
-            file={file}
+            jobId={jobId}
             onCancel={reset}
-            onDone={() => setScreen('results')}
+            onDone={(r) => {
+              setResult(r);
+              setScreen('results');
+            }}
           />
         )}
-        {screen === 'results' && <ResultsScreen model={model} info={info} file={file} onReset={reset} />}
+        {screen === 'results' && (
+          <ResultsScreen model={model} info={info} file={file} result={result} onReset={reset} />
+        )}
         {screen === 'about' && <AboutScreen onBack={backFromAbout} />}
       </main>
 

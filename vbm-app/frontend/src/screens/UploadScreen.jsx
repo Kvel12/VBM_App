@@ -1,18 +1,33 @@
 import { useState } from 'react';
 import DropZone from '../components/DropZone.jsx';
 import { useT } from '../i18n/LanguageContext.jsx';
+import { postAnalyze } from '../api/client.js';
 
 const UploadScreen = ({ model, onStart, onBack }) => {
   const t = useT();
-  const [info, setInfo] = useState({ test: '', patient: '', notes: '' });
+  const [info, setInfo] = useState({ test: '', patient: '', notes: '', useRobex: false });
   const [file, setFile] = useState(null);
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState(null);
   const u = (k, v) => setInfo((p) => ({ ...p, [k]: v }));
-  const ok = file && info.test.trim();
+  const ok = file && info.test.trim() && !uploading;
+
+  const handleStart = async () => {
+    setUploading(true);
+    setUploadError(null);
+    try {
+      const { job_id } = await postAnalyze(file, info, model.id);
+      onStart(info, file, job_id);
+    } catch (e) {
+      setUploadError(e.message || String(e));
+      setUploading(false);
+    }
+  };
 
   return (
     <div className="fu">
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 28 }}>
-        <button className="btn btn-g btn-sm" onClick={onBack}>{t('upload.back')}</button>
+        <button className="btn btn-g btn-sm" onClick={onBack} disabled={uploading}>{t('upload.back')}</button>
         <div>
           <div style={{ fontWeight: 700, fontSize: 19 }}>{t(`models.${model.id}.fullName`)}</div>
           <div style={{ fontSize: 13.5, color: 'var(--t2)' }}>
@@ -34,6 +49,7 @@ const UploadScreen = ({ model, onStart, onBack }) => {
               placeholder={t('upload.testPh')}
               value={info.test}
               onChange={(e) => u('test', e.target.value)}
+              disabled={uploading}
             />
           </div>
           <div className="ff">
@@ -43,6 +59,7 @@ const UploadScreen = ({ model, onStart, onBack }) => {
               placeholder={t('upload.patientPh')}
               value={info.patient}
               onChange={(e) => u('patient', e.target.value)}
+              disabled={uploading}
             />
           </div>
           <div className="ff">
@@ -53,8 +70,24 @@ const UploadScreen = ({ model, onStart, onBack }) => {
               placeholder={t('upload.notesPh')}
               value={info.notes}
               onChange={(e) => u('notes', e.target.value)}
+              disabled={uploading}
             />
           </div>
+
+          {/* Toggle ROBEX skull stripping */}
+          <label className={`opt-toggle${uploading ? ' opt-disabled' : ''}`}>
+            <input
+              type="checkbox"
+              checked={info.useRobex}
+              onChange={(e) => u('useRobex', e.target.checked)}
+              disabled={uploading}
+            />
+            <div className="opt-text">
+              <div className="opt-title">{t('upload.robexLabel')}</div>
+              <div className="opt-hint">{t('upload.robexHint')}</div>
+            </div>
+          </label>
+
           <div className="ib" style={{ fontSize: 12.5 }}>
             <span>ℹ️</span>
             <span
@@ -68,7 +101,7 @@ const UploadScreen = ({ model, onStart, onBack }) => {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
           <div className="card">
             <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 13 }}>{t('upload.t1Title')}</div>
-            <DropZone file={file} onChange={setFile} />
+            <DropZone file={file} onChange={uploading ? () => {} : setFile} />
           </div>
           <div
             className="card"
@@ -112,6 +145,13 @@ const UploadScreen = ({ model, onStart, onBack }) => {
         </div>
       </div>
 
+      {uploadError && (
+        <div className="wb" style={{ marginTop: 18, color: 'var(--bad)', borderColor: 'oklch(.86 .09 25)', background: 'var(--badl)' }}>
+          <span style={{ flexShrink: 0 }}>⚠</span>
+          <span>{t('upload.uploadError', { msg: uploadError })}</span>
+        </div>
+      )}
+
       <div
         style={{
           display: 'flex',
@@ -122,13 +162,18 @@ const UploadScreen = ({ model, onStart, onBack }) => {
           flexWrap: 'wrap',
         }}
       >
-        {!ok && (
+        {!ok && !uploading && (
           <span style={{ fontSize: 13, color: 'var(--t3)' }}>
-            {!file ? t('upload.warnFile') : t('upload.warnName')}
+            {!file ? t('upload.warnFile') : !info.test.trim() ? t('upload.warnName') : ''}
           </span>
         )}
-        <button className="btn btn-g" onClick={onBack}>{t('upload.cancel')}</button>
-        <button className="btn btn-p btn-lg" disabled={!ok} onClick={() => onStart(info, file)}>
+        {uploading && (
+          <span style={{ fontSize: 13, color: 'var(--primary)', display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span className="spin" /> {t('upload.uploading')}
+          </span>
+        )}
+        <button className="btn btn-g" onClick={onBack} disabled={uploading}>{t('upload.cancel')}</button>
+        <button className="btn btn-p btn-lg" disabled={!ok} onClick={handleStart}>
           {t('upload.start')}
         </button>
       </div>

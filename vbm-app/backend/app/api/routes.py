@@ -5,6 +5,7 @@ GET  /status/{job_id} → polling del estado
 GET  /report/{job_id} → descarga reporte .txt
 """
 
+import os
 import uuid
 import time
 import asyncio
@@ -16,6 +17,18 @@ from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Background
 from fastapi.responses import FileResponse
 
 from app.config import TMP_DIR, API_CONFIG
+
+# Flags de runtime (set en docker-compose.yml o `docker compose run -e`)
+# KEEP_TMP_FILES=true → no borra /app/tmp/<job_id>/ al terminar,
+#                        para poder inspeccionar mwp1*.nii y batches .m
+#
+# Nota: SKIP_ROBEX se retiró — ROBEX siempre se omite por defecto (decisión
+# de diseño documentada en app/preprocessing/robex.py) para coincidir con el
+# pipeline de entrenamiento.
+def _truthy(env_value: str) -> bool:
+    return (env_value or "").lower() in ("1", "true", "yes", "on")
+
+KEEP_TMP_FILES = _truthy(os.environ.get("KEEP_TMP_FILES"))
 from app.api.schemas import (
     ModelType, JobCreatedResponse, JobStatusResponse,
     ProcessStep, StepStatus, AnalysisResult,
@@ -85,11 +98,20 @@ async def _run_analysis(job_id: str, nii_path: Path, model: ModelType,
         t1_path = validate_and_load(nii_path)
         _update_step(job_id, 1, StepStatus.COMPLETED)
 
-        # ── Paso 2: ROBEX ──────────────────────────────────────────────────
-        _update_step(job_id, 2, StepStatus.IN_PROGRESS, "Eliminando cráneo...")
+        # ── Paso 2: Skull stripping opcional (controlado por use_robex) ───
+        # Por defecto (use_robex=False): la T1 pasa directamente a SPM12
+        # — replica el pipeline de entrenamiento. SPM12 Unified Segmentation
+        # hace su propia extracción de cerebro internamente.
+        # Si use_robex=True: ROBEX se aplica antes (útil para T1 con cráneo
+        # ya removido en otro pipeline, o por elección metodológica).
+        use_robex = bool(metadata.get("use_robex", False))
+        _update_step(job_id, 2, StepStatus.IN_PROGRESS,
+                     "Aplicando ROBEX..." if use_robex else "Validando imagen T1...")
         from app.preprocessing.robex import skull_strip
-        brain_path = skull_strip(t1_path, job_id)
-        _update_step(job_id, 2, StepStatus.COMPLETED)
+        brain_path = skull_strip(t1_path, job_id, skip_robex=not use_robex)
+        _update_step(job_id, 2, StepStatus.COMPLETED,
+                     "Skull stripping ROBEX aplicado" if use_robex
+                     else "T1 pasa directamente a SPM12")
 
         # ── Pasos siguientes según modelo ──────────────────────────────────
         if model == ModelType.SPM12_DARTEL:
@@ -131,8 +153,12 @@ async def _run_analysis(job_id: str, nii_path: Path, model: ModelType,
         print(f"[JOB {job_id}] ERROR: {traceback.format_exc()}")
 
     finally:
-        # Limpiar archivos temporales del job
-        _cleanup(job_id)
+        # Limpiar archivos temporales del job (omitible con KEEP_TMP_FILES=true
+        # para poder inspeccionar mwp1*.nii, rc1*.nii, batches .m, etc.)
+        if KEEP_TMP_FILES:
+            print(f"[JOB {job_id}] KEEP_TMP_FILES=true — intermediarios en {TMP_DIR / job_id}")
+        else:
+            _cleanup(job_id)
 
 
 def _generate_report(job_id: str, result: AnalysisResult):
@@ -201,6 +227,7 @@ async def analyze(
     model:        ModelType  = Form(...),
     patient_name: str        = Form(""),
     notes:        str        = Form(""),
+    use_robex:    bool       = Form(False),
 ):
     # Validar extensión
     filename = file.filename or ""
@@ -239,6 +266,7 @@ async def analyze(
         "test_name":    test_name,
         "patient_name": patient_name or None,
         "notes":        notes or None,
+        "use_robex":    use_robex,
     }
 
     background_tasks.add_task(_run_analysis, job_id, nii_path, model, metadata)

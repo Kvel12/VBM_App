@@ -37,8 +37,9 @@ _BATCH_SEGMENT = Template("""
 %% SPM12 Unified Segmentation — generado automáticamente
 %% Job: $job_id
 
-addpath('$spm_dir');
-spm('defaults', 'FMRI');
+%% SPM Standalone: la ruta y los defaults ya están inicializados al arrancar.
+%% `addpath` y `spm('defaults',...)` están prohibidos en modo compilado
+%% (MATLAB Compiler no permite modificar search path en runtime).
 spm_jobman('initcfg');
 
 TPM_PATH = fullfile(spm('Dir'), 'tpm', 'TPM.nii');
@@ -76,8 +77,9 @@ _BATCH_DARTEL_NORM = Template("""
 %% SPM12 DARTEL Normalise to MNI — generado automáticamente
 %% Job: $job_id
 
-addpath('$spm_dir');
-spm('defaults', 'FMRI');
+%% SPM Standalone: la ruta y los defaults ya están inicializados al arrancar.
+%% `addpath` y `spm('defaults',...)` están prohibidos en modo compilado
+%% (MATLAB Compiler no permite modificar search path en runtime).
 spm_jobman('initcfg');
 
 matlabbatch{1}.spm.tools.dartel.mni_norm.template = {'$template_6'};
@@ -98,10 +100,14 @@ exit;
 def _run_spm_batch(batch_content: str, job_id: str, step: str,
                    timeout: int) -> None:
     """
-    Escribe el batch a un archivo temporal y lo ejecuta con SPM Standalone.
+    Escribe el script .m a un archivo temporal y lo ejecuta con SPM Standalone.
 
     SPM Standalone se invoca como:
-        ./run_spm12.sh <mcr_dir> batch <batch_file.m>
+        ./run_spm12.sh <mcr_dir> script <batch_file.m>
+
+    El modo `script` ejecuta un .m arbitrario (que internamente llama a
+    spm_jobman('run', matlabbatch)). El modo `batch` solo acepta .mat con
+    un matlabbatch serializado — no nuestro caso.
     """
     # Escribir batch a archivo temporal en el directorio del job
     job_dir    = TMP_DIR / job_id
@@ -111,7 +117,7 @@ def _run_spm_batch(batch_content: str, job_id: str, step: str,
     cmd = [
         str(SPM_RUN_SCRIPT),
         str(MCR_DIR),
-        "batch",
+        "script",
         str(batch_path),
     ]
 
@@ -267,8 +273,9 @@ _BATCH_DARTEL_EXISTING = Template("""
 %% SPM12 DARTEL existing templates — generado automáticamente
 %% Job: $job_id
 
-addpath('$spm_dir');
-spm('defaults', 'FMRI');
+%% SPM Standalone: la ruta y los defaults ya están inicializados al arrancar.
+%% `addpath` y `spm('defaults',...)` están prohibidos en modo compilado
+%% (MATLAB Compiler no permite modificar search path en runtime).
 spm_jobman('initcfg');
 
 %% Paso 1: Run DARTEL (existing templates) → genera flow field u_rc1*.nii
@@ -305,38 +312,31 @@ matlabbatch{1}.spm.tools.dartel.warp1.settings.optim.lmreg = 0.01;
 matlabbatch{1}.spm.tools.dartel.warp1.settings.optim.cyc   = 3;
 matlabbatch{1}.spm.tools.dartel.warp1.settings.optim.its   = 3;
 
-%% Paso 2: Normalise to MNI Space
-matlabbatch{2}.spm.tools.dartel.mni_norm.template = {'$template_6'};
-matlabbatch{2}.spm.tools.dartel.mni_norm.data.subjs.flowfields(1) = ...
-    cfg_dep('Run DARTEL (existing templates): Flow Field', ...
-            substruct('.','val', '{}',{1}, '.','val', '{}',{1}, ...
-                      '.','val', '{}',{1}, '.','val', '{}',{1}), ...
-            substruct('.','files', '{}',{1}));
-matlabbatch{2}.spm.tools.dartel.mni_norm.data.subjs.images = {{'$rc1_path'}};
-matlabbatch{2}.spm.tools.dartel.mni_norm.vox      = [$vox];
-matlabbatch{2}.spm.tools.dartel.mni_norm.bb       = [$bb_row1; $bb_row2];
-matlabbatch{2}.spm.tools.dartel.mni_norm.preserve = $preserve;
-matlabbatch{2}.spm.tools.dartel.mni_norm.fwhm     = [$fwhm];
-
 spm_jobman('run', matlabbatch);
 exit;
 """)
+# Nota: este template SOLO ejecuta warp1. La normalización a MNI se hace
+# en un segundo subprocess (run_dartel_normalise) usando el flow field
+# que warp1 acaba de generar. Encadenar ambos módulos con cfg_dep en
+# SPM Standalone produce "unresolved dependencies" — el modo compilado
+# no resuelve substruct('.','val','{}',{1},...) igual que la GUI.
 
 
 def run_dartel_existing_full(rc1_path: Path, rc2_path: Path,
                               job_id: str) -> tuple[Path, Path]:
     """
-    Ejecuta Run DARTEL (existing templates) + Normalise to MNI en un solo job.
-    Este es el flujo correcto para sujetos nuevos.
+    Ejecuta DARTEL existing templates (warp1) y luego Normalise to MNI Space
+    como dos subprocess SPM separados. El flow field se busca en disco entre
+    una invocación y otra (en SPM Standalone no podemos encadenar módulos
+    con cfg_dep — produce "unresolved dependencies").
 
     Returns:
         (gm_map_path, ff_path) — mapa GM modulado y flow field generado
     """
     rc1_path = Path(rc1_path)
     rc2_path = Path(rc2_path)
-    vbm_p    = VBM_PARAMS
-    bb       = vbm_p["bb"]
 
+    # ── Paso A: warp1 (existing templates) → genera u_rc1*.nii flow field ──
     batch = _BATCH_DARTEL_EXISTING.substitute(
         job_id     = job_id,
         spm_dir    = str(SPM_STANDALONE_DIR),
@@ -348,18 +348,10 @@ def run_dartel_existing_full(rc1_path: Path, rc2_path: Path,
         template_4 = str(DARTEL_TEMPLATES[4]),
         template_5 = str(DARTEL_TEMPLATES[5]),
         template_6 = str(DARTEL_TEMPLATES[6]),
-        vox        = " ".join(str(v) for v in vbm_p["vox"]),
-        bb_row1    = " ".join(str(v) for v in bb[0]),
-        bb_row2    = " ".join(str(v) for v in bb[1]),
-        preserve   = vbm_p["preserve"],
-        fwhm       = " ".join(str(v) for v in vbm_p["fwhm"]),
     )
+    _run_spm_batch(batch, job_id, "dartel_warp1", timeout=SPM_TIMEOUT_SEG)
 
-    # DARTEL existing puede tardar más que solo la normalización
-    _run_spm_batch(batch, job_id, "dartel_existing_full",
-                   timeout=SPM_TIMEOUT_SEG + SPM_TIMEOUT_NORM)
-
-    # Buscar flow field generado (u_rc1*.nii)
+    # ── Buscar flow field generado (u_rc1*.nii) ─────────────────────────────
     stem    = rc1_path.stem   # rc1<nombre>
     out_dir = rc1_path.parent
 
@@ -367,17 +359,13 @@ def run_dartel_existing_full(rc1_path: Path, rc2_path: Path,
     if not ff_candidates:
         ff_candidates = list(out_dir.glob("u_rc1*.nii"))
     if not ff_candidates:
-        raise RuntimeError(f"Flow field no encontrado en {out_dir}")
+        raise RuntimeError(
+            f"Flow field no encontrado tras warp1 en {out_dir}.\n"
+            f"Archivos presentes: {[f.name for f in out_dir.iterdir()]}"
+        )
     ff_path = ff_candidates[0]
 
-    # Buscar mapa GM
-    gm_candidates = list(out_dir.glob(f"mw*{stem[3:]}*.nii"))
-    if not gm_candidates:
-        gm_candidates = list(out_dir.glob("mw*.nii"))
-    if not gm_candidates:
-        raise RuntimeError(
-            f"Mapa GM no encontrado en {out_dir} después de DARTEL existing.\n"
-            f"Archivos disponibles: {[f.name for f in out_dir.iterdir()]}"
-        )
+    # ── Paso B: Normalise to MNI Space (subprocess separado) ────────────────
+    gm_map_path = run_dartel_normalise(rc1_path, ff_path, job_id)
 
-    return gm_candidates[0], ff_path
+    return gm_map_path, ff_path

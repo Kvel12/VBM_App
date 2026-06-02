@@ -32,6 +32,11 @@ services:
       - SPM_STANDALONE_DIR=/opt/spm12_standalone
       - MCR_DIR=/opt/mcr/v97
       - ROBEX_DIR=/opt/ROBEX
+      # ── Flags de diagnóstico ─────────────────────────────────────────────
+      # KEEP_TMP_FILES=true → no borra /app/tmp/<job_id>/ al terminar
+      #                       (útil para inspeccionar mwp1*.nii intermedios)
+      # Nota: ROBEX siempre se omite por defecto — ver robex.py
+      - KEEP_TMP_FILES=true
     # Sin GPU: comentar o eliminar el bloque deploy
     # Con GPU NVIDIA: descomentar (requiere nvidia-container-toolkit en el host)
     # deploy:

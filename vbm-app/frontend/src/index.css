@@ -179,6 +179,28 @@ body { font-family:'Outfit',system-ui,sans-serif; background:var(--bg); color:va
 .mtile  { background:var(--s2); border-radius:10px; padding:14px; text-align:center; }
 .mv     { font-size:20px; font-weight:700; color:var(--primary); }
 .ml     { font-size:11px; color:var(--t3); text-transform:uppercase; letter-spacing:.4px; margin-top:2px; }
+.fold-note {
+  margin-top:12px; padding:8px 12px; font-size:12px; line-height:1.5;
+  color:var(--t3); border-left:3px solid var(--border); background:var(--bg);
+  border-radius:0 6px 6px 0;
+}
+
+/* ── Option toggle (checkbox + label + hint) ── */
+.opt-toggle {
+  display:flex; align-items:flex-start; gap:10px;
+  padding:11px 14px; border:1.5px solid var(--border); border-radius:10px;
+  background:var(--bg); cursor:pointer; transition:border-color .15s, background .15s;
+}
+.opt-toggle:hover { border-color:var(--primary); background:var(--pl); }
+.opt-toggle input[type="checkbox"] {
+  margin-top:2px; width:16px; height:16px; accent-color:var(--primary);
+  cursor:pointer; flex-shrink:0;
+}
+.opt-text { flex:1; }
+.opt-title { font-size:13.5px; font-weight:600; color:var(--text); line-height:1.4; }
+.opt-hint  { font-size:12px;   color:var(--t3);  line-height:1.5; margin-top:3px; }
+.opt-disabled { opacity:.55; cursor:not-allowed; }
+.opt-disabled:hover { border-color:var(--border); background:var(--bg); }
 
 /* ── Seg placeholder ── */
 .seg-ph {

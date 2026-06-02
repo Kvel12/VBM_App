@@ -63,7 +63,18 @@ def preprocess_gm_map(gm_map_path: Path) -> torch.Tensor:
     """
     target_shape   = CNN_CONFIG["input_shape"]          # (96, 96, 96)
     vox_size       = CNN_CONFIG["target_affine"]        # [1.9, 1.9, 1.9]
-    target_affine  = np.diag([*vox_size, 1]).astype(np.float64)
+
+    # IMPORTANTE: `np.diag([*vox_size, 1])` produce un affine 4x4 con
+    # translation = (0,0,0) — el grid resampleado tiene su voxel (0,0,0)
+    # en MNI (0,0,0) y se extiende hacia +x/+y/+z. Esto CROPS el cerebro
+    # al octante positivo MNI (~30% del volumen total).
+    #
+    # Esto se ve "incorrecto" pero es EXACTAMENTE lo que hizo el código
+    # de entrenamiento (GMVolumeDataset._load_and_resize del notebook).
+    # El CNN aprendió features sobre ese crop específico, así que la
+    # inferencia debe replicarlo bit-a-bit para que las predicciones
+    # tengan sentido.
+    target_affine = np.diag([*vox_size, 1]).astype(np.float64)
 
     # 1. Cargar imagen
     img = nib.load(str(gm_map_path))
@@ -73,7 +84,7 @@ def preprocess_gm_map(gm_map_path: Path) -> torch.Tensor:
         img,
         target_affine=target_affine,
         target_shape=target_shape,
-        interpolation='linear'
+        interpolation='linear',
     )
     data = img_resized.get_fdata(dtype=np.float32)
 
