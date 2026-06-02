@@ -1,6 +1,8 @@
 import { useState, useRef } from 'react';
+import { useT } from '../i18n/LanguageContext.jsx';
 
 const DropZone = ({ file, onChange }) => {
+  const t = useT();
   const [drag, setDrag] = useState(false);
   const ref = useRef();
 
@@ -31,17 +33,17 @@ const DropZone = ({ file, onChange }) => {
           <div style={{ fontSize: 44, marginBottom: 8 }}>✅</div>
           <div style={{ fontWeight: 700, fontSize: 16 }}>{file.name}</div>
           <div style={{ fontSize: 13, color: 'var(--t3)', marginTop: 4 }}>
-            {(file.size / 1024 / 1024).toFixed(1)} MB · Clic para cambiar
+            {(file.size / 1024 / 1024).toFixed(1)} MB · {t('upload.dropChange')}
           </div>
         </>
       ) : (
         <>
           <div style={{ fontSize: 52, marginBottom: 12, opacity: 0.65 }}>🧠</div>
           <div style={{ fontWeight: 600, fontSize: 16, color: 'var(--text)' }}>
-            Arrastra tu imagen T1 aquí
+            {t('upload.dropPrompt')}
           </div>
           <div style={{ fontSize: 13, color: 'var(--t3)', marginTop: 6 }}>
-            Formatos aceptados: <strong>.nii</strong> · <strong>.gz</strong> · Clic para explorar
+            {t('upload.dropFormats')} <strong>.nii</strong> · <strong>.gz</strong> · {t('upload.dropClick')}
           </div>
         </>
       )}

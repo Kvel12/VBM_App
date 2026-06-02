@@ -1,12 +1,18 @@
 import { useState } from 'react';
 import Brain from './components/Brain.jsx';
+import Footer from './components/Footer.jsx';
+import LanguageToggle from './components/LanguageToggle.jsx';
 import HomeScreen from './screens/HomeScreen.jsx';
 import UploadScreen from './screens/UploadScreen.jsx';
 import ProcessingScreen from './screens/ProcessingScreen.jsx';
 import ResultsScreen from './screens/ResultsScreen.jsx';
+import AboutScreen from './screens/AboutScreen.jsx';
+import { useT } from './i18n/LanguageContext.jsx';
 
 const App = () => {
+  const t = useT();
   const [screen, setScreen] = useState('home');
+  const [prevScreen, setPrevScreen] = useState('home');
   const [model, setModel] = useState(null);
   const [info, setInfo] = useState({});
   const [file, setFile] = useState(null);
@@ -18,8 +24,15 @@ const App = () => {
     setScreen('home');
   };
 
+  const goAbout = () => {
+    setPrevScreen(screen);
+    setScreen('about');
+  };
+
+  const backFromAbout = () => setScreen(prevScreen);
+
   return (
-    <div>
+    <div className="app">
       <nav className="nav">
         <div
           style={{
@@ -45,14 +58,25 @@ const App = () => {
             marginLeft: 4,
           }}
         >
-          v1.0 prototipo
+          {t('nav.versionBadge')}
         </span>
-        {model && (
-          <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span className={`badge ${model.badge === 'Segmentación' ? 'b-am' : 'b-bl'}`}>{model.badge}</span>
-            <span style={{ fontSize: 13.5, color: 'var(--t2)', fontWeight: 500 }}>{model.name}</span>
-          </div>
-        )}
+
+        <div className="nav-right">
+          {model && screen !== 'about' && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span className={`badge ${model.badge === 'segmentation' ? 'b-am' : 'b-bl'}`}>
+                {t(`badge.${model.badge}`)}
+              </span>
+              <span style={{ fontSize: 13.5, color: 'var(--t2)', fontWeight: 500 }}>
+                {t(`models.${model.id}.name`)}
+              </span>
+            </div>
+          )}
+          <button type="button" className="nav-about" onClick={goAbout}>
+            {t('nav.about')}
+          </button>
+          <LanguageToggle />
+        </div>
       </nav>
 
       <main className="main">
@@ -85,7 +109,10 @@ const App = () => {
           />
         )}
         {screen === 'results' && <ResultsScreen model={model} info={info} file={file} onReset={reset} />}
+        {screen === 'about' && <AboutScreen onBack={backFromAbout} />}
       </main>
+
+      <Footer onAbout={goAbout} />
     </div>
   );
 };

@@ -1,63 +1,55 @@
+// Strings (name, desc, tooltip, badge labels, step labels, metric labels) live
+// in src/i18n/translations.js under keys derived from the IDs here. Stable IDs:
+//   - model.id        → resolves models.{id}.name / .fullName / .desc / .tooltip
+//   - model.badge     → resolves badge.{badge}
+//   - model.metricLabel → resolves metrics.{metricLabel}
+//   - step (string)   → resolves steps.{step}.name / .det
+//   - metric tuple [key, value] → key resolves metrics.{key}; value is shown as-is
 export const MODELS = [
   {
     id: 'spm12',
-    name: 'SPM12 / DARTEL',
-    fullName: 'Modelo SPM12 / DARTEL',
-    desc: 'Análisis morfométrico basado en vóxeles. Extrae el mapa de materia gris con SPM12 y DARTEL para clasificar entre control y epilepsia.',
-    metricLabel: 'AUC-ROC',
+    metricLabel: 'aucRoc',
     metricVal: '71%',
-    badge: 'Clasificación',
+    badge: 'classification',
     type: 'classification',
-    tooltip: 'AUC-ROC de 71 % — mide la discriminación control/epilepsia. Rango: 0.5 = aleatorio, 1.0 = perfecto.',
-    steps: [
-      { name: 'Cargando imagen T1',           det: 'Verificando formato .nii / .gz' },
-      { name: 'Extracción de cráneo · ROBEX', det: 'Skull stripping morfológico' },
-      { name: 'Mapa de materia gris · SPM12', det: 'Registro y normalización DARTEL' },
-      { name: 'Predicción clasificadora',     det: 'Modelo control vs. epilepsia' },
+    steps: ['load', 'robex', 'gmMap', 'classify'],
+    metrics: [
+      ['aucRoc', '71 %'],
+      ['sensitivity', '68 %'],
+      ['specificity', '74 %'],
+      ['accuracy', '71 %'],
     ],
-    metrics: { 'AUC-ROC': '71 %', 'Sensibilidad': '68 %', 'Especificidad': '74 %', 'Exactitud': '71 %' },
     sim: { epilepsy: 73, control: 27 },
   },
   {
     id: 'hybrid',
-    name: 'Modelo Híbrido',
-    fullName: 'Modelo Híbrido (Ensamblaje)',
-    desc: 'Combina el modelo SPM12/DARTEL con un SVM de features volumétricos. Fusión lineal de predicciones para mayor precisión diagnóstica.',
-    metricLabel: 'AUC-ROC',
+    metricLabel: 'aucRoc',
     metricVal: '81%',
-    badge: 'Ensamblaje',
+    badge: 'ensemble',
     type: 'classification',
-    tooltip: 'AUC-ROC de 81 % — el mejor del conjunto. Fusiona SPM12 (morfometría profunda) + SVM clásico (datos volumétricos).',
     recommended: true,
-    steps: [
-      { name: 'Cargando imagen T1',           det: 'Verificando formato .nii / .gz' },
-      { name: 'Extracción de cráneo · ROBEX', det: 'Skull stripping morfológico' },
-      { name: 'Mapa de materia gris · SPM12', det: 'Registro y normalización DARTEL' },
-      { name: 'Features volumétricos (CSV)',  det: 'Extracción de datos morfométricos' },
-      { name: 'Clasificación SVM',            det: 'Support Vector Machine sobre features' },
-      { name: 'Ensamblaje SPM12 + SVM',       det: 'Análisis lineal → predicción final' },
+    steps: ['load', 'robex', 'gmMap', 'volFeats', 'svm', 'ensemble'],
+    metrics: [
+      ['aucRoc', '81 %'],
+      ['sensitivity', '80 %'],
+      ['specificity', '82 %'],
+      ['accuracy', '81 %'],
     ],
-    metrics: { 'AUC-ROC': '81 %', 'Sensibilidad': '80 %', 'Especificidad': '82 %', 'Exactitud': '81 %' },
     sim: { epilepsy: 79, control: 21 },
   },
   {
     id: 'nnunet',
-    name: 'nnUNet',
-    fullName: 'Modelo nnUNet (Segmentación)',
-    desc: 'Red de segmentación que localiza y genera una máscara de las zonas epileptogénicas en la imagen T1.',
-    metricLabel: 'DSC Medio',
+    metricLabel: 'dscMean',
     metricVal: '63%',
-    badge: 'Segmentación',
+    badge: 'segmentation',
     type: 'segmentation',
-    tooltip: 'DSC Medio de 63 % (Dice Similarity Coefficient) — superposición entre la segmentación predicha y la real.',
-    steps: [
-      { name: 'Cargando imagen T1',           det: 'Verificando formato .nii / .gz' },
-      { name: 'Extracción de cráneo · ROBEX', det: 'Skull stripping morfológico' },
-      { name: 'Preprocesamiento nnUNet',      det: 'Normalización e interpolación' },
-      { name: 'Inferencia de segmentación',   det: 'Red nnUNet genera la máscara' },
-      { name: 'Post-procesamiento',           det: 'Exportando máscara .nii / .gz' },
+    steps: ['load', 'robex', 'nnunetPre', 'nnunetInfer', 'nnunetPost'],
+    metrics: [
+      ['dscMean', '63 %'],
+      ['hausdorff95', '12.4 mm'],
+      ['sensitivity', '61 %'],
+      ['specificity', '98 %'],
     ],
-    metrics: { 'DSC Medio': '63 %', 'Hausdorff 95': '12.4 mm', 'Sensibilidad': '61 %', 'Especificidad': '98 %' },
     sim: { dsc: 63 },
   },
 ];

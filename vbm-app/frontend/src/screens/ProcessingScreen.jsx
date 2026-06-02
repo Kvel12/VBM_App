@@ -1,8 +1,10 @@
 import { useState, useEffect, useRef } from 'react';
 import Brain from '../components/Brain.jsx';
 import Spinner from '../components/Spinner.jsx';
+import { useT } from '../i18n/LanguageContext.jsx';
 
 const ProcessingScreen = ({ model, info, file, onCancel, onDone }) => {
+  const t = useT();
   const [done, setDone] = useState([]);
   const [cur, setCur] = useState(0);
   const timers = useRef([]);
@@ -29,17 +31,16 @@ const ProcessingScreen = ({ model, info, file, onCancel, onDone }) => {
     <div className="fu">
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 30 }}>
         <div>
-          <div style={{ fontWeight: 700, fontSize: 19 }}>{model.fullName}</div>
+          <div style={{ fontWeight: 700, fontSize: 19 }}>{t(`models.${model.id}.fullName`)}</div>
           <div style={{ fontSize: 13.5, color: 'var(--t2)', marginTop: 3 }}>
-            Prueba: <strong>{info.test}</strong>
+            {t('processing.test')} <strong>{info.test}</strong>
             {info.patient ? ` · ${info.patient}` : ''}
           </div>
         </div>
-        <button className="btn btn-d btn-sm" onClick={onCancel}>⬛ Cancelar</button>
+        <button className="btn btn-d btn-sm" onClick={onCancel}>{t('processing.cancel')}</button>
       </div>
 
       <div className="rgrid" style={{ display: 'grid', gridTemplateColumns: '260px 1fr', gap: 24 }}>
-        {/* Left: brain + progress */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '22px 0', position: 'relative' }}>
             <div style={{ position: 'relative', width: 140, height: 140 }}>
@@ -63,29 +64,33 @@ const ProcessingScreen = ({ model, info, file, onCancel, onDone }) => {
           </div>
 
           <div className="card" style={{ textAlign: 'center', padding: 20 }}>
-            <div style={{ fontSize: 13, color: 'var(--t3)', marginBottom: 8 }}>Progreso general</div>
+            <div style={{ fontSize: 13, color: 'var(--t3)', marginBottom: 8 }}>{t('processing.generalProgress')}</div>
             <div className="pt" style={{ marginBottom: 10 }}>
               <div className="pf" style={{ width: `${pct}%` }} />
             </div>
             <div style={{ fontWeight: 800, fontSize: 28, color: 'var(--primary)' }}>{pct}%</div>
             <div style={{ fontSize: 13, color: 'var(--t3)', marginTop: 4 }}>
-              Paso {Math.min(done.length + (allDone ? 0 : 1), model.steps.length)} de {model.steps.length}
+              {t('processing.stepNofM', {
+                cur: Math.min(done.length + (allDone ? 0 : 1), model.steps.length),
+                total: model.steps.length,
+              })}
             </div>
           </div>
 
           <div className="wb" style={{ fontSize: 12.5 }}>
             <span style={{ flexShrink: 0 }}>⏱</span>
-            <span>
-              El proceso puede tardar <strong>5–15 min</strong> en equipos reales. No cierre la aplicación.
-            </span>
+            <span
+              dangerouslySetInnerHTML={{
+                __html: t('processing.durationWarn', { range: `<strong>${t('processing.durationRange')}</strong>` }),
+              }}
+            />
           </div>
         </div>
 
-        {/* Right: steps */}
         <div className="card">
-          <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 16 }}>Estado del proceso</div>
+          <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 16 }}>{t('processing.stateTitle')}</div>
           <div className="slist">
-            {model.steps.map((s, i) => {
+            {model.steps.map((stepKey, i) => {
               const status = st(i);
               return (
                 <div key={i} className={`srow ${status}`}>
@@ -99,14 +104,18 @@ const ProcessingScreen = ({ model, info, file, onCancel, onDone }) => {
                     )}
                   </div>
                   <div className="sinfo">
-                    <div className="sname">{s.name}</div>
+                    <div className="sname">{t(`steps.${stepKey}.name`)}</div>
                     <div className="sdet">
-                      {status === 'done' ? '✓ Completado' : status === 'act' ? 'Procesando…' : s.det}
+                      {status === 'done'
+                        ? t('processing.done')
+                        : status === 'act'
+                        ? t('processing.processing')
+                        : t(`steps.${stepKey}.det`)}
                     </div>
                   </div>
                   {status === 'act' && (
                     <span style={{ fontSize: 11.5, color: 'var(--primary)', fontWeight: 700, flexShrink: 0 }}>
-                      EN CURSO
+                      {t('processing.inProgress')}
                     </span>
                   )}
                 </div>
@@ -116,7 +125,9 @@ const ProcessingScreen = ({ model, info, file, onCancel, onDone }) => {
           {allDone && (
             <div className="ib" style={{ marginTop: 16 }}>
               <span>✅</span>
-              <span><strong>Proceso completado.</strong> Cargando resultados…</span>
+              <span>
+                <strong>{t('processing.finishedBold')}</strong> {t('processing.finishedRest')}
+              </span>
             </div>
           )}
         </div>

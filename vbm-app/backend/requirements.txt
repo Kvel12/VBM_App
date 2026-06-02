@@ -1,21 +1,20 @@
 # ─── API ──────────────────────────────────────────────────────────────────────
 fastapi==0.115.5
 uvicorn[standard]==0.32.1
-python-multipart==0.0.12     # necesario para Form + File en FastAPI
+python-multipart==0.0.12
 
 # ─── NIfTI / neuroimagen ──────────────────────────────────────────────────────
 nibabel==5.3.2
-nilearn==0.10.4
+nilearn==0.10.4        # requerido por cnn_model.py (resample_img)
 numpy==1.26.4
 
 # ─── ML / clasificadores ─────────────────────────────────────────────────────
-# PyTorch CPU-only por defecto (el Dockerfile añade la variante CUDA si hay GPU)
 torch==2.3.1+cpu
 torchvision==0.18.1+cpu
 --extra-index-url https://download.pytorch.org/whl/cpu
 
-scikit-learn==1.5.2          # SVM, métricas
-joblib==1.4.2                # serialización sklearn (.pkl)
+scikit-learn==1.5.2
+joblib==1.4.2
 
 # ─── Utilidades ───────────────────────────────────────────────────────────────
 pydantic==2.9.2

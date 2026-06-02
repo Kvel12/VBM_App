@@ -1,5 +1,6 @@
 # Modelos y templates pesados
 backend/models/*.pth
+backend/models/*.pt
 backend/models/*.pkl
 backend/models/nnunet_weights/
 backend/dartel_templates/*.nii

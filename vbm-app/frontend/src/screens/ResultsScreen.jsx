@@ -1,8 +1,11 @@
 import { useState, useEffect } from 'react';
 import Brain from '../components/Brain.jsx';
 import Gauge from '../components/Gauge.jsx';
+import { useT, useLang } from '../i18n/LanguageContext.jsx';
 
 const ResultsScreen = ({ model, info, file, onReset }) => {
+  const t = useT();
+  const [lang] = useLang();
   const [gv, setGv] = useState(0);
   const isClass = model.type === 'classification';
   const r = model.sim;
@@ -14,42 +17,43 @@ const ResultsScreen = ({ model, info, file, onReset }) => {
   }, []);
 
   const genTxt = () => {
-    const now = new Date().toLocaleString('es-CO');
+    const locale = lang === 'en' ? 'en-US' : 'es-CO';
+    const now = new Date().toLocaleString(locale);
     const sep = '═══════════════════════════════════════════════';
     const lines = [
       sep,
-      '   REPORTE VBM App — Análisis Neurológico',
+      `   ${t('report.header')}`,
       sep,
       '',
-      `Fecha:         ${now}`,
-      `Modelo:        ${model.fullName}`,
-      `Prueba:        ${info.test}`,
-      `Paciente:      ${info.patient || 'No especificado'}`,
-      `Archivo:       ${file.name}`,
+      `${t('report.date').padEnd(14)} ${now}`,
+      `${t('report.model').padEnd(14)} ${t(`models.${model.id}.fullName`)}`,
+      `${t('report.test').padEnd(14)} ${info.test}`,
+      `${t('report.patient').padEnd(14)} ${info.patient || t('report.notSpecified')}`,
+      `${t('report.file').padEnd(14)} ${file.name}`,
       '',
-      '──────────────── RESULTADO ──────────────────',
+      t('report.sectionResult'),
       isClass
         ? [
-            `Clase:         ${r.epilepsy >= 50 ? 'Posible Epilepsia' : 'Posible Control'}`,
-            `Prob. Epilepsia:   ${r.epilepsy} %`,
-            `Prob. Control:     ${r.control} %`,
+            `${t('report.class').padEnd(14)} ${r.epilepsy >= 50 ? t('report.classEpi') : t('report.classControl')}`,
+            `${t('report.probEpi').padEnd(18)} ${r.epilepsy} %`,
+            `${t('report.probControl').padEnd(18)} ${r.control} %`,
           ].join('\n')
         : [
-            `Tipo:          Segmentación`,
-            `DSC obtenido:  ${r.dsc} %`,
-            `Máscara:       Disponible para descarga`,
+            `${t('report.type').padEnd(14)} ${t('report.typeSeg')}`,
+            `${t('report.dscObtained').padEnd(14)} ${r.dsc} %`,
+            `${t('report.mask').padEnd(14)} ${t('report.maskAvail')}`,
           ].join('\n'),
       '',
-      '──────────────── MÉTRICAS DEL MODELO ────────',
-      ...Object.entries(model.metrics).map(([k, v]) => `${k.padEnd(18)}${v}`),
+      t('report.sectionMetrics'),
+      ...model.metrics.map(([k, v]) => `${t(`metrics.${k}`).padEnd(18)}${v}`),
       '',
-      '──────────────── ADVERTENCIA ─────────────────',
-      'Este resultado es orientativo y NO constituye diagnóstico.',
-      'Debe ser revisado por un neurólogo antes de tomar decisiones.',
-      info.notes ? `\nNotas: ${info.notes}` : '',
+      t('report.sectionWarn'),
+      t('report.warn1'),
+      t('report.warn2'),
+      info.notes ? `\n${t('report.notes')} ${info.notes}` : '',
       '',
       sep,
-      'VBM App v1.0 — Morfometría Basada en Vóxeles',
+      t('report.footerLine'),
     ]
       .filter((l) => l !== undefined)
       .join('\n');
@@ -57,7 +61,7 @@ const ResultsScreen = ({ model, info, file, onReset }) => {
     const blob = new Blob([lines], { type: 'text/plain;charset=utf-8' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = `VBM_Reporte_${info.test.replace(/\s+/g, '_')}.txt`;
+    a.download = `VBM_${lang === 'en' ? 'Report' : 'Reporte'}_${info.test.replace(/\s+/g, '_')}.txt`;
     a.click();
     URL.revokeObjectURL(a.href);
   };
@@ -82,20 +86,19 @@ const ResultsScreen = ({ model, info, file, onReset }) => {
             <Brain size={26} color="var(--primary)" />
           </div>
           <div>
-            <div style={{ fontWeight: 700, fontSize: 19 }}>Resultados del análisis</div>
+            <div style={{ fontWeight: 700, fontSize: 19 }}>{t('results.title')}</div>
             <div style={{ fontSize: 13.5, color: 'var(--t2)' }}>
-              {model.fullName} · <strong>{info.test}</strong>
+              {t(`models.${model.id}.fullName`)} · <strong>{info.test}</strong>
               {info.patient ? ` · ${info.patient}` : ''}
             </div>
           </div>
         </div>
-        <button className="btn btn-g btn-sm" onClick={onReset}>← Nuevo análisis</button>
+        <button className="btn btn-g btn-sm" onClick={onReset}>{t('results.back')}</button>
       </div>
 
       <div className="card" style={{ marginBottom: 20 }}>
         {isClass ? (
           <div className="rgrid" style={{ display: 'grid', gridTemplateColumns: '230px 1fr', gap: 28, alignItems: 'start' }}>
-            {/* Gauge */}
             <div className="gauge-zone">
               <div
                 style={{
@@ -106,20 +109,19 @@ const ResultsScreen = ({ model, info, file, onReset }) => {
                   letterSpacing: '.5px',
                 }}
               >
-                Confianza del modelo
+                {t('results.confidence')}
               </div>
               <Gauge value={gv} color={isEpi ? 'var(--bad)' : 'var(--ok)'} />
               <div className={`verdict ${isEpi ? 'v-pos' : 'v-neg'}`}>
-                {isEpi ? '⚠ Posible Epilepsia' : '✓ Posible Control'}
+                {isEpi ? t('results.verdictEpi') : t('results.verdictControl')}
               </div>
             </div>
-            {/* Bars + metrics */}
             <div>
-              <div style={{ fontWeight: 700, fontSize: 17, marginBottom: 16 }}>Probabilidades de clasificación</div>
+              <div style={{ fontWeight: 700, fontSize: 17, marginBottom: 16 }}>{t('results.probsTitle')}</div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
                 <div className="pbrow">
                   <div className="pblab">
-                    <span>Epilepsia</span>
+                    <span>{t('results.labelEpilepsy')}</span>
                     <span style={{ fontWeight: 700, color: 'var(--bad)' }}>{gv} %</span>
                   </div>
                   <div className="pbt">
@@ -128,7 +130,7 @@ const ResultsScreen = ({ model, info, file, onReset }) => {
                 </div>
                 <div className="pbrow">
                   <div className="pblab">
-                    <span>Control</span>
+                    <span>{t('results.labelControl')}</span>
                     <span style={{ fontWeight: 700, color: 'var(--ok)' }}>{100 - gv} %</span>
                   </div>
                   <div className="pbt">
@@ -137,10 +139,10 @@ const ResultsScreen = ({ model, info, file, onReset }) => {
                 </div>
               </div>
               <div className="mtiles">
-                {Object.entries(model.metrics).map(([k, v]) => (
+                {model.metrics.map(([k, v]) => (
                   <div key={k} className="mtile">
                     <div className="mv">{v}</div>
-                    <div className="ml">{k}</div>
+                    <div className="ml">{t(`metrics.${k}`)}</div>
                   </div>
                 ))}
               </div>
@@ -152,29 +154,31 @@ const ResultsScreen = ({ model, info, file, onReset }) => {
               <div className="seg-ph">
                 <span style={{ fontSize: 42 }}>🧠</span>
                 <span style={{ fontFamily: 'monospace', lineHeight: 1.45 }}>
-                  máscara de segmentación
+                  {t('results.segCaption1')}
                   <br />
-                  [zona epileptogénica]
+                  {t('results.segCaption2')}
                 </span>
               </div>
               <button
                 className="btn btn-ok btn-sm"
-                onClick={() => alert('La descarga de la máscara estará disponible en la versión de producción.')}
+                onClick={() => alert(t('results.downloadMaskAlertShort'))}
               >
-                ⬇ Descargar máscara (.nii)
+                {t('results.downloadMaskShort')}
               </button>
             </div>
             <div>
-              <div style={{ fontWeight: 700, fontSize: 17, marginBottom: 12 }}>Segmentación completada</div>
-              <p style={{ fontSize: 14.5, color: 'var(--t2)', lineHeight: 1.65, marginBottom: 20 }}>
-                nnUNet ha localizado y segmentado la zona epileptogénica en la imagen T1. La máscara está lista para descarga en
-                formato <strong>.nii</strong> o <strong>.gz</strong>.
-              </p>
+              <div style={{ fontWeight: 700, fontSize: 17, marginBottom: 12 }}>{t('results.segCompletedTitle')}</div>
+              <p
+                style={{ fontSize: 14.5, color: 'var(--t2)', lineHeight: 1.65, marginBottom: 20 }}
+                dangerouslySetInnerHTML={{
+                  __html: t('results.segCompletedDesc', { nii: '<strong>.nii</strong>', gz: '<strong>.gz</strong>' }),
+                }}
+              />
               <div className="mtiles" style={{ gridTemplateColumns: 'repeat(2,1fr)' }}>
-                {Object.entries(model.metrics).map(([k, v]) => (
+                {model.metrics.map(([k, v]) => (
                   <div key={k} className="mtile">
                     <div className="mv">{v}</div>
-                    <div className="ml">{k}</div>
+                    <div className="ml">{t(`metrics.${k}`)}</div>
                   </div>
                 ))}
               </div>
@@ -183,28 +187,26 @@ const ResultsScreen = ({ model, info, file, onReset }) => {
         )}
       </div>
 
-      {/* Disclaimer */}
       <div className="wb" style={{ marginBottom: 20 }}>
         <span style={{ fontSize: 22, flexShrink: 0 }}>⚕️</span>
         <div>
-          <strong>Aviso médico importante:</strong> Este análisis es una herramienta de apoyo diagnóstico y{' '}
-          <strong>no reemplaza el criterio clínico</strong>. Los resultados deben ser interpretados por un médico
-          especialista (neurólogo). No tome decisiones clínicas basándose únicamente en este resultado.
+          <strong>{t('results.disclaimerBold')}</strong> {t('results.disclaimerBody')}{' '}
+          <strong>{t('results.disclaimerEm')}</strong>
+          {t('results.disclaimerRest')}
         </div>
       </div>
 
-      {/* Actions */}
       <div style={{ display: 'flex', gap: 12, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
         {model.type === 'segmentation' && (
           <button
             className="btn btn-ok"
-            onClick={() => alert('La descarga de la máscara estará disponible en producción.')}
+            onClick={() => alert(t('results.downloadMaskAlertLong'))}
           >
-            ⬇ Máscara (.nii / .gz)
+            {t('results.downloadMaskLong')}
           </button>
         )}
-        <button className="btn btn-g" onClick={genTxt}>📄 Exportar reporte .txt</button>
-        <button className="btn btn-p" onClick={onReset}>+ Nuevo análisis</button>
+        <button className="btn btn-g" onClick={genTxt}>{t('results.exportTxt')}</button>
+        <button className="btn btn-p" onClick={onReset}>{t('results.newAnalysis')}</button>
       </div>
     </div>
   );

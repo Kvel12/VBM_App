@@ -1,7 +1,9 @@
 import { useState } from 'react';
 import DropZone from '../components/DropZone.jsx';
+import { useT } from '../i18n/LanguageContext.jsx';
 
 const UploadScreen = ({ model, onStart, onBack }) => {
+  const t = useT();
   const [info, setInfo] = useState({ test: '', patient: '', notes: '' });
   const [file, setFile] = useState(null);
   const u = (k, v) => setInfo((p) => ({ ...p, [k]: v }));
@@ -10,60 +12,62 @@ const UploadScreen = ({ model, onStart, onBack }) => {
   return (
     <div className="fu">
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 28 }}>
-        <button className="btn btn-g btn-sm" onClick={onBack}>← Volver</button>
+        <button className="btn btn-g btn-sm" onClick={onBack}>{t('upload.back')}</button>
         <div>
-          <div style={{ fontWeight: 700, fontSize: 19 }}>{model.fullName}</div>
+          <div style={{ fontWeight: 700, fontSize: 19 }}>{t(`models.${model.id}.fullName`)}</div>
           <div style={{ fontSize: 13.5, color: 'var(--t2)' }}>
-            {model.metricLabel}: {model.metricVal} · {model.badge}
+            {t(`metrics.${model.metricLabel}`)}: {model.metricVal} · {t(`badge.${model.badge}`)}
           </div>
         </div>
       </div>
 
       <div className="fgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 22 }}>
-        {/* Form */}
         <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
           <div>
-            <div style={{ fontWeight: 700, fontSize: 17, marginBottom: 3 }}>Información del análisis</div>
-            <div style={{ fontSize: 13, color: 'var(--t3)' }}>Se incluirá en el reporte exportado.</div>
+            <div style={{ fontWeight: 700, fontSize: 17, marginBottom: 3 }}>{t('upload.infoTitle')}</div>
+            <div style={{ fontSize: 13, color: 'var(--t3)' }}>{t('upload.infoSubtitle')}</div>
           </div>
           <div className="ff">
-            <label className="fl">Nombre de la prueba *</label>
+            <label className="fl">{t('upload.testLabel')}</label>
             <input
               className="fi"
-              placeholder="ej. Prueba_001_Control"
+              placeholder={t('upload.testPh')}
               value={info.test}
               onChange={(e) => u('test', e.target.value)}
             />
           </div>
           <div className="ff">
-            <label className="fl">Nombre del paciente (opcional)</label>
+            <label className="fl">{t('upload.patientLabel')}</label>
             <input
               className="fi"
-              placeholder="ej. Paciente A"
+              placeholder={t('upload.patientPh')}
               value={info.patient}
               onChange={(e) => u('patient', e.target.value)}
             />
           </div>
           <div className="ff">
-            <label className="fl">Notas adicionales</label>
+            <label className="fl">{t('upload.notesLabel')}</label>
             <textarea
               className="fta"
               rows={3}
-              placeholder="Observaciones clínicas, contexto..."
+              placeholder={t('upload.notesPh')}
               value={info.notes}
               onChange={(e) => u('notes', e.target.value)}
             />
           </div>
           <div className="ib" style={{ fontSize: 12.5 }}>
             <span>ℹ️</span>
-            <span>Solo se acepta <strong>una imagen T1</strong> por análisis.</span>
+            <span
+              dangerouslySetInnerHTML={{
+                __html: t('upload.oneImage', { bold: `<strong>${t('upload.oneImageBold')}</strong>` }),
+              }}
+            />
           </div>
         </div>
 
-        {/* Upload + step preview */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
           <div className="card">
-            <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 13 }}>Imagen T1 — .nii / .gz</div>
+            <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 13 }}>{t('upload.t1Title')}</div>
             <DropZone file={file} onChange={setFile} />
           </div>
           <div
@@ -71,9 +75,9 @@ const UploadScreen = ({ model, onStart, onBack }) => {
             style={{ background: 'var(--pl)', borderColor: 'oklch(0.86 0.06 235)', padding: '18px 20px' }}
           >
             <div style={{ fontWeight: 700, fontSize: 13.5, color: 'var(--pd)', marginBottom: 10 }}>
-              Pasos del proceso · {model.steps.length}
+              {t('upload.stepsTitle')} · {model.steps.length}
             </div>
-            {model.steps.map((s, i) => (
+            {model.steps.map((stepKey, i) => (
               <div
                 key={i}
                 style={{
@@ -101,7 +105,7 @@ const UploadScreen = ({ model, onStart, onBack }) => {
                 >
                   {i + 1}
                 </div>
-                <span style={{ fontSize: 13, color: 'var(--pd)' }}>{s.name}</span>
+                <span style={{ fontSize: 13, color: 'var(--pd)' }}>{t(`steps.${stepKey}.name`)}</span>
               </div>
             ))}
           </div>
@@ -120,12 +124,12 @@ const UploadScreen = ({ model, onStart, onBack }) => {
       >
         {!ok && (
           <span style={{ fontSize: 13, color: 'var(--t3)' }}>
-            {!file ? '⚠ Adjunta la imagen T1' : '⚠ Ingresa el nombre de la prueba'}
+            {!file ? t('upload.warnFile') : t('upload.warnName')}
           </span>
         )}
-        <button className="btn btn-g" onClick={onBack}>Cancelar</button>
+        <button className="btn btn-g" onClick={onBack}>{t('upload.cancel')}</button>
         <button className="btn btn-p btn-lg" disabled={!ok} onClick={() => onStart(info, file)}>
-          Iniciar análisis →
+          {t('upload.start')}
         </button>
       </div>
     </div>
