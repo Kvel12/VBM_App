@@ -8,9 +8,9 @@ from enum import Enum
 
 
 class ModelType(str, Enum):
-    SPM12_DARTEL = "spm12_dartel"
-    HYBRID       = "hybrid"
-    NNUNET       = "nnunet"
+    DEEPMRIPREP = "deepmriprep"   # antes SPM12_DARTEL (descartado por irreproducibilidad cross-platform)
+    HYBRID      = "hybrid"
+    NNUNET      = "nnunet"
 
 
 # ─── Request (multipart, el .nii/.gz va como UploadFile en la ruta) ───────────

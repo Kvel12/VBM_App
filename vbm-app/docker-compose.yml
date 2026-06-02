@@ -1,16 +1,17 @@
-version: "3.9"
-
 # ─────────────────────────────────────────────────────────────────────────────
 # VBM App — Docker Compose
 #
 # Uso:
-#   docker-compose up --build          # primera vez
-#   docker-compose up                  # siguientes veces
-#   docker-compose down                # bajar
+#   docker compose up --build         # primera vez
+#   docker compose up                 # siguientes veces
+#   docker compose down               # bajar
 #
-# Assets pesados (no están en git — copiar antes de levantar):
-#   backend/dartel_templates/  → Template_1.nii … Template_6.nii + Template_6_2mni.mat
-#   backend/models/            → spm12_cnn_v3.pth, svm_volumetric.pkl, nnunet_weights/
+# Pipeline actual: deepmriprep (PyTorch puro) + CNN MedicalNet ResNet-18.
+# (SPM12 + MCR R2024b descartados en migración por irreproducibilidad
+#  cross-platform — ver Dockerfile y app/pipelines/deepmriprep_pipeline.py)
+#
+# Assets pesados (NO están en git — montados desde el host):
+#   backend/models/  → deepmriprep_cnn_fold3.pt  (~130 MB, modelo CNN)
 # ─────────────────────────────────────────────────────────────────────────────
 
 services:
@@ -23,22 +24,19 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      # Assets pesados montados desde el host (no están en la imagen)
-      - ./backend/dartel_templates:/app/dartel_templates:ro
+      # Modelo CNN montado desde el host (no se mete en la imagen)
       - ./backend/models:/app/models:ro
       # Temporal de procesamiento (lectura/escritura)
       - ./backend/tmp:/app/tmp
     environment:
-      - SPM_STANDALONE_DIR=/opt/spm12_standalone
-      - MCR_DIR=/opt/mcr/v97
       - ROBEX_DIR=/opt/ROBEX
       # ── Flags de diagnóstico ─────────────────────────────────────────────
       # KEEP_TMP_FILES=true → no borra /app/tmp/<job_id>/ al terminar
-      #                       (útil para inspeccionar mwp1*.nii intermedios)
-      # Nota: ROBEX siempre se omite por defecto — ver robex.py
+      #                       (útil para inspeccionar mwp1*.nii.gz intermedios)
       - KEEP_TMP_FILES=true
     # Sin GPU: comentar o eliminar el bloque deploy
     # Con GPU NVIDIA: descomentar (requiere nvidia-container-toolkit en el host)
+    # deepmriprep auto-detecta GPU vía torch.cuda.is_available()
     # deploy:
     #   resources:
     #     reservations:

@@ -5,21 +5,25 @@
 //   - model.metricLabel → resolves metrics.{metricLabel}
 //   - step (string)   → resolves steps.{step}.name / .det
 //   - metric tuple [key, value] → key resolves metrics.{key}; value is shown as-is
+//
+// Nota histórica: la primera tarjeta era SPM12/DARTEL. Se migró a deepmriprep
+// porque SPM12 producía mapas GM no reproducibles entre macOS (entrenamiento)
+// y Linux Docker (inferencia). deepmriprep es PyTorch puro → cross-platform OK.
 export const MODELS = [
   {
-    id: 'spm12',
+    id: 'deepmriprep',
     metricLabel: 'aucRoc',
-    metricVal: '71%',
+    metricVal: '80%',
     badge: 'classification',
     type: 'classification',
-    steps: ['load', 'robex', 'gmMap', 'classify'],
+    steps: ['load', 'robex', 'dmpVbm', 'classify'],
     metrics: [
-      ['aucRoc', '71 %'],
-      ['sensitivity', '68 %'],
-      ['specificity', '74 %'],
-      ['accuracy', '71 %'],
+      ['aucRoc',      '79.7 %'],
+      ['sensitivity', '55.8 %'],
+      ['specificity', '88.4 %'],
+      ['accuracy',    '72.1 %'],
     ],
-    sim: { epilepsy: 73, control: 27 },
+    recommended: true,
   },
   {
     id: 'hybrid',
@@ -27,13 +31,12 @@ export const MODELS = [
     metricVal: '81%',
     badge: 'ensemble',
     type: 'classification',
-    recommended: true,
-    steps: ['load', 'robex', 'gmMap', 'volFeats', 'svm', 'ensemble'],
+    steps: ['load', 'robex', 'dmpVbm', 'volFeats', 'svm', 'ensemble'],
     metrics: [
-      ['aucRoc', '81 %'],
+      ['aucRoc',      '81 %'],
       ['sensitivity', '80 %'],
       ['specificity', '82 %'],
-      ['accuracy', '81 %'],
+      ['accuracy',    '81 %'],
     ],
     sim: { epilepsy: 79, control: 21 },
   },
@@ -45,7 +48,7 @@ export const MODELS = [
     type: 'segmentation',
     steps: ['load', 'robex', 'nnunetPre', 'nnunetInfer', 'nnunetPost'],
     metrics: [
-      ['dscMean', '63 %'],
+      ['dscMean',     '63 %'],
       ['hausdorff95', '12.4 mm'],
       ['sensitivity', '61 %'],
       ['specificity', '98 %'],

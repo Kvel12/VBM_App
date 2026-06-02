@@ -9,12 +9,20 @@ nilearn==0.10.4        # requerido por cnn_model.py (resample_img)
 numpy==1.26.4
 
 # ─── ML / clasificadores ─────────────────────────────────────────────────────
+# PyTorch CPU base — si hay GPU NVIDIA disponible en runtime, torch.cuda.is_available()
+# retorna True automáticamente (deepmriprep recibe no_gpu=not is_available()).
 torch==2.3.1+cpu
 torchvision==0.18.1+cpu
 --extra-index-url https://download.pytorch.org/whl/cpu
 
 scikit-learn==1.5.2
 joblib==1.4.2
+
+# ─── Preprocesamiento VBM (reemplazo de SPM12+DARTEL) ────────────────────────
+# deepmriprep: brain extraction + tissue segmentation + MNI registration + modulation,
+# todo basado en PyTorch (cross-platform reproducible — la razón del cambio desde SPM12).
+deepmriprep==0.2.0
+antspyx==0.5.4         # dependencia de deepmriprep para resampling
 
 # ─── Utilidades ───────────────────────────────────────────────────────────────
 pydantic==2.9.2

@@ -3,10 +3,10 @@
 
 const API_BASE = '/api/v1';
 
-// El backend espera ModelType ∈ { spm12_dartel, hybrid, nnunet }.
-// El frontend usa ids más cortos en MODELS — mapeo aquí.
+// El backend espera ModelType ∈ { deepmriprep, hybrid, nnunet }.
+// Los ids del frontend coinciden 1:1 con los del backend.
 const MODEL_ID_MAP = {
-  spm12: 'spm12_dartel',
+  deepmriprep: 'deepmriprep',
   hybrid: 'hybrid',
   nnunet: 'nnunet',
 };

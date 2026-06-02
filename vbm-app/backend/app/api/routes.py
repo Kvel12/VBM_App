@@ -47,9 +47,9 @@ def _steps_for_model(model: ModelType) -> list[ProcessStep]:
     base = [
         ProcessStep(step=1, name="Cargando imagen T1",       status=StepStatus.PENDING),
         ProcessStep(step=2, name="Extracción de cráneo · ROBEX", status=StepStatus.PENDING),
-        ProcessStep(step=3, name="Mapa de materia gris · SPM12", status=StepStatus.PENDING),
+        ProcessStep(step=3, name="Preprocesamiento VBM · deepmriprep", status=StepStatus.PENDING),
     ]
-    if model == ModelType.SPM12_DARTEL:
+    if model == ModelType.DEEPMRIPREP:
         return base + [
             ProcessStep(step=4, name="Clasificación CNN",    status=StepStatus.PENDING),
         ]
@@ -57,7 +57,7 @@ def _steps_for_model(model: ModelType) -> list[ProcessStep]:
         return base + [
             ProcessStep(step=4, name="Features volumétricos (CSV)", status=StepStatus.PENDING),
             ProcessStep(step=5, name="Clasificación SVM",           status=StepStatus.PENDING),
-            ProcessStep(step=6, name="Ensamblaje SPM12 + SVM",      status=StepStatus.PENDING),
+            ProcessStep(step=6, name="Ensamblaje deepmriprep + SVM", status=StepStatus.PENDING),
         ]
     elif model == ModelType.NNUNET:
         return [
@@ -99,11 +99,10 @@ async def _run_analysis(job_id: str, nii_path: Path, model: ModelType,
         _update_step(job_id, 1, StepStatus.COMPLETED)
 
         # ── Paso 2: Skull stripping opcional (controlado por use_robex) ───
-        # Por defecto (use_robex=False): la T1 pasa directamente a SPM12
-        # — replica el pipeline de entrenamiento. SPM12 Unified Segmentation
-        # hace su propia extracción de cerebro internamente.
-        # Si use_robex=True: ROBEX se aplica antes (útil para T1 con cráneo
-        # ya removido en otro pipeline, o por elección metodológica).
+        # Por defecto (use_robex=False): la T1 pasa directamente a deepmriprep
+        # — deepmriprep hace brain extraction internamente con deepbet.
+        # Si use_robex=True: ROBEX se aplica antes (útil si el usuario tiene
+        # una T1 con cráneo y prefiere skull-stripping clásico explícito).
         use_robex = bool(metadata.get("use_robex", False))
         _update_step(job_id, 2, StepStatus.IN_PROGRESS,
                      "Aplicando ROBEX..." if use_robex else "Validando imagen T1...")
@@ -111,12 +110,12 @@ async def _run_analysis(job_id: str, nii_path: Path, model: ModelType,
         brain_path = skull_strip(t1_path, job_id, skip_robex=not use_robex)
         _update_step(job_id, 2, StepStatus.COMPLETED,
                      "Skull stripping ROBEX aplicado" if use_robex
-                     else "T1 pasa directamente a SPM12")
+                     else "T1 pasa directamente a deepmriprep")
 
         # ── Pasos siguientes según modelo ──────────────────────────────────
-        if model == ModelType.SPM12_DARTEL:
-            from app.pipelines.spm12_dartel import run as run_spm12
-            result = await asyncio.to_thread(run_spm12, brain_path, job_id,
+        if model == ModelType.DEEPMRIPREP:
+            from app.pipelines.deepmriprep_pipeline import run as run_dmp
+            result = await asyncio.to_thread(run_dmp, brain_path, job_id,
                                              _update_step, metadata)
 
         elif model == ModelType.HYBRID:

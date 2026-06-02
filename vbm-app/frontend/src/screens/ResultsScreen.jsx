@@ -75,9 +75,9 @@ const ResultsScreen = ({ model, info, file, result, onReset }) => {
     URL.revokeObjectURL(a.href);
   };
 
-  // Clave de la nota de fold según modelo (solo SPM12 por ahora)
+  // Clave de la nota de fold según modelo (solo deepmriprep por ahora)
   const foldNoteKey = `results.foldNote.${model.id}`;
-  const hasFoldNote = model.id === 'spm12';
+  const hasFoldNote = model.id === 'deepmriprep';
 
   return (
     <div className="fu">
