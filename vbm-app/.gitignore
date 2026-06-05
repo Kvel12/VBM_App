@@ -11,6 +11,8 @@ backend/dartel_templates/*.mat
 backend/spm_standalone/
 backend/mcr/
 
+backend/tmp/
+
 # Vendor: binarios descargados manualmente
 #   - spm12_r7771.zip (UCL gated página de descarga)
 #   - ROBEXv12.linux64.tar.gz (NITRC agreement page)
