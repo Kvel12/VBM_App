@@ -29,7 +29,11 @@ const App = () => {
   };
 
   const goAbout = () => {
-    setPrevScreen(screen);
+    // Only remember the previous screen if we're not already on About —
+    // otherwise re-clicking the "Acerca de" nav link while on About would
+    // overwrite prevScreen with 'about' itself and the back button would
+    // become a no-op.
+    if (screen !== 'about') setPrevScreen(screen);
     setScreen('about');
   };
 

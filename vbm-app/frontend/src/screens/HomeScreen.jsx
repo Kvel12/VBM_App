@@ -27,7 +27,16 @@ const HomeScreen = ({ onSelect }) => {
         />
       </div>
 
-      <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 22 }}>
+      <div
+        className="mgrid"
+        style={{
+          display: 'grid',
+          gridTemplateColumns: `repeat(${Math.min(MODELS.length, 3)}, minmax(0, 1fr))`,
+          gap: 22,
+          maxWidth: MODELS.length === 2 ? 720 : '100%',
+          margin: '0 auto',
+        }}
+      >
         {MODELS.map((m) => (
           <div key={m.id} className={`mcard${m.recommended ? ' rec' : ''}`} onClick={() => onSelect(m)}>
             {m.recommended && <div className="rec-lbl">{t('home.recommended')}</div>}

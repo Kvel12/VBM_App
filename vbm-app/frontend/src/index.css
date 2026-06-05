@@ -73,6 +73,10 @@ body { font-family:'Outfit',system-ui,sans-serif; background:var(--bg); color:va
 .btn-g:hover { background:var(--s2); color:var(--text); }
 .btn-d  { background:var(--bad); color:#fff; border:1.5px solid var(--bad); }
 .btn-d:hover { background:oklch(0.50 0.20 25); border-color:oklch(0.50 0.20 25); transform:translateY(-1px); box-shadow:0 5px 14px oklch(.56 .20 25 / .35); }
+.btn-stop-icon {
+  display:inline-block; width:11px; height:11px; border-radius:2px;
+  background:currentColor; flex-shrink:0;
+}
 .btn-ok { background:var(--ok); color:#fff; }
 .btn-ok:hover { filter:brightness(.91); transform:translateY(-1px); }
 .btn-lg { padding:15px 30px; font-size:16px; border-radius:12px; }

@@ -45,7 +45,7 @@ export const TRANSLATIONS = {
     'upload.robexLabel': 'Aplicar skull stripping (ROBEX) antes de SPM12',
     'upload.robexHint': 'Por defecto desactivado. El pipeline de entrenamiento pasa la T1 directamente a SPM12, que hace su propia extracción del cerebro. Actívalo si tu T1 ya viene sin cráneo o por elección metodológica.',
 
-    'processing.cancel': '⬛ Cancelar',
+    'processing.cancel': 'Cancelar',
     'processing.test': 'Prueba:',
     'processing.generalProgress': 'Progreso general',
     'processing.stepNofM': 'Paso {cur} de {total}',
@@ -256,7 +256,7 @@ export const TRANSLATIONS = {
     'upload.robexLabel': 'Apply skull stripping (ROBEX) before SPM12',
     'upload.robexHint': 'Off by default. The training pipeline passes the T1 directly to SPM12, which performs its own brain extraction. Enable only if your T1 is already skull-stripped or as a methodological choice.',
 
-    'processing.cancel': '⬛ Cancel',
+    'processing.cancel': 'Cancel',
     'processing.test': 'Test:',
     'processing.generalProgress': 'Overall progress',
     'processing.stepNofM': 'Step {cur} of {total}',

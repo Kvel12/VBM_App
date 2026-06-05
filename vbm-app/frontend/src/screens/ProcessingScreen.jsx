@@ -88,7 +88,10 @@ const ProcessingScreen = ({ model, info, jobId, onCancel, onDone }) => {
             {jobId && <span style={{ marginLeft: 10, color: 'var(--t3)', fontSize: 12, fontFamily: 'monospace' }}>#{jobId}</span>}
           </div>
         </div>
-        <button className="btn btn-d btn-sm" onClick={onCancel}>{t('processing.cancel')}</button>
+        <button className="btn btn-d btn-sm" onClick={onCancel}>
+          <span className="btn-stop-icon" aria-hidden="true" />
+          {t('processing.cancel')}
+        </button>
       </div>
 
       <div className="rgrid" style={{ display: 'grid', gridTemplateColumns: '260px 1fr', gap: 24 }}>
