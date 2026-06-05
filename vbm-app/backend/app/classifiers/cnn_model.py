@@ -4,6 +4,11 @@ cnn_model.py — Loader del CNN (MedicalNet ResNet-18, TorchScript)
 Entrenado sobre mapas mwp1 generados por deepmriprep (no por SPM12 — el cambio
 se documenta en config.py y Dockerfile). Fold 3 = mejor fold individual.
 
+IMPORTANTE: el .pt debe ser generado con `torch.jit.script(model)`, NO con
+`torch.jit.trace(model, dummy)`. El trace introducía un sesgo sistemático de
+~0.062 que reclasificaba el 50% de las predicciones positivas como "control"
+(ver config.py para detalles).
+
 PREPROCESAMIENTO EXACTO DEL ENTRENAMIENTO (GMVolumeDataset._load_and_resize):
   1. Cargar .nii.gz con nibabel
   2. nilearn.image.resample_img con target_affine=np.diag([1.9, 1.9, 1.9, 1])
@@ -15,7 +20,7 @@ NOTA: el target_affine 4x4 con translation = 0 reproduce literalmente el código
 del notebook de entrenamiento (Colab deepmriprep_3DCNN_VBM_Epilepsy.ipynb).
 NO modificar — un fix "centrado" del grid rompería la equivalencia con training.
 
-Umbral clínico: 0.688 (optimizado para Especificidad >= 0.85, fold 3)
+Umbral clínico: 0.6875 (optimizado para Especificidad >= 0.85, fold 3)
 """
 
 import numpy as np
@@ -101,7 +106,7 @@ def predict(gm_map_path: Path) -> dict:
     """
     Ejecuta inferencia con el CNN sobre un mapa GM.
 
-    Usa el umbral clínico 0.688 (optimizado para Spec >= 0.85 en fold 3)
+    Usa el umbral clínico 0.6875 (optimizado para Spec >= 0.85 en fold 3)
     en lugar del umbral estándar 0.5.
 
     Returns:
@@ -110,7 +115,7 @@ def predict(gm_map_path: Path) -> dict:
     """
     model     = get_model()
     tensor    = preprocess_gm_map(gm_map_path)
-    threshold = CNN_CONFIG["clinical_threshold"]  # 0.688
+    threshold = CNN_CONFIG["clinical_threshold"]  # 0.6875
 
     with torch.no_grad():
         output = model(tensor)                           # (1, 2)
@@ -142,12 +147,12 @@ CNN_MODEL_METRICS = {
     "specificity":       0.8841,
     "accuracy":          0.7211,   # balanced accuracy fold 3
     "f1_macro":          0.7011,
-    "clinical_threshold": 0.688,
+    "clinical_threshold": 0.6875,
     "fold":              3,
 
     # Promedio 5-fold CV (para reporte completo de tesis)
     "auc_cv_mean":       0.6846,
-    "auc_cv_std":        0.0937,
+    "auc_cv_std":        0.1048,
     "sens_cv_mean":      0.310,
     "sens_cv_std":       0.198,
     "spec_cv_mean":      0.896,

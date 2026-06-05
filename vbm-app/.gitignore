@@ -1,4 +1,5 @@
 # Modelos y templates pesados
+backend/models/nnunet_ideas_fold_all/*.pth
 backend/models/*.pth
 backend/models/*.pt
 backend/models/*.pkl

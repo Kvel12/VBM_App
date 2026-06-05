@@ -36,9 +36,64 @@ from app.api.schemas import (
 
 router = APIRouter()
 
-# ─── Store en memoria para jobs (en producción usar Redis o DB) ───────────────
+# ─── Store de jobs (memoria + persistencia ligera en disco) ──────────────────
 # Estructura: { job_id: { "status": ..., "steps": [...], "result": ... } }
+#
+# Persistencia: se guarda un snapshot de "ID de job + status + paso final" a
+# disco cada vez que se actualiza un paso. Si el container muere y reinicia,
+# el endpoint /status puede devolver "error" en lugar de 404 → el frontend
+# muestra un mensaje útil ("el backend reinició a mitad del análisis") en
+# lugar del genérico "Job no encontrado".
+import json as _json
+
 JOBS: dict = {}
+_PERSIST_FILE = TMP_DIR / "_jobs_snapshot.json"
+
+
+def _persist_snapshot():
+    """Guarda un snapshot serializable del dict JOBS — silencioso si falla."""
+    try:
+        snapshot = {}
+        for jid, j in JOBS.items():
+            snapshot[jid] = {
+                "status":   j.get("status"),
+                "progress": j.get("progress", 0),
+                "error":    j.get("error"),
+            }
+        _PERSIST_FILE.write_text(_json.dumps(snapshot), encoding="utf-8")
+    except Exception:
+        pass
+
+
+def _load_snapshot_on_start():
+    """
+    Al arrancar, lee jobs previos del disco. Si alguno quedó "running" o
+    "pending" → lo marcamos como "error" porque el container reinició a
+    mitad. El frontend lo verá como fallo en lugar de 404.
+    """
+    if not _PERSIST_FILE.exists():
+        return
+    try:
+        prev = _json.loads(_PERSIST_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        return
+    for jid, snap in prev.items():
+        status = snap.get("status")
+        if status in ("running", "pending"):
+            status = "error"
+        JOBS[jid] = {
+            "status":   status,
+            "progress": snap.get("progress", 0),
+            "steps":    [],
+            "result":   None,
+            "error":    snap.get("error") or (
+                "El backend se reinició durante el análisis. "
+                "Vuelve a lanzar el job."),
+        }
+
+
+# Cargar snapshot al importar el módulo (uvicorn lo importa una sola vez por proceso).
+_load_snapshot_on_start()
 
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -52,12 +107,6 @@ def _steps_for_model(model: ModelType) -> list[ProcessStep]:
     if model == ModelType.DEEPMRIPREP:
         return base + [
             ProcessStep(step=4, name="Clasificación CNN",    status=StepStatus.PENDING),
-        ]
-    elif model == ModelType.HYBRID:
-        return base + [
-            ProcessStep(step=4, name="Features volumétricos (CSV)", status=StepStatus.PENDING),
-            ProcessStep(step=5, name="Clasificación SVM",           status=StepStatus.PENDING),
-            ProcessStep(step=6, name="Ensamblaje deepmriprep + SVM", status=StepStatus.PENDING),
         ]
     elif model == ModelType.NNUNET:
         return [
@@ -79,6 +128,7 @@ def _update_step(job_id: str, step_num: int, status: StepStatus, msg: str = None
     completed = sum(1 for s in JOBS[job_id]["steps"] if s.status == StepStatus.COMPLETED)
     total     = len(JOBS[job_id]["steps"])
     JOBS[job_id]["progress"] = int((completed / total) * 100)
+    _persist_snapshot()
 
 
 # ─── Background task principal ────────────────────────────────────────────────
@@ -118,15 +168,13 @@ async def _run_analysis(job_id: str, nii_path: Path, model: ModelType,
             result = await asyncio.to_thread(run_dmp, brain_path, job_id,
                                              _update_step, metadata)
 
-        elif model == ModelType.HYBRID:
-            from app.pipelines.hybrid import run as run_hybrid
-            result = await asyncio.to_thread(run_hybrid, brain_path, job_id,
-                                             _update_step, metadata)
-
         elif model == ModelType.NNUNET:
             from app.pipelines.nnunet import run as run_nnunet
             result = await asyncio.to_thread(run_nnunet, brain_path, job_id,
                                              _update_step, metadata)
+
+        else:
+            raise ValueError(f"Modelo no soportado: {model}")
 
         # ── Resultado final ────────────────────────────────────────────────
         result.processing_time_s = round(time.time() - start, 1)
@@ -140,16 +188,17 @@ async def _run_analysis(job_id: str, nii_path: Path, model: ModelType,
 
         # Generar reporte .txt
         _generate_report(job_id, result)
+        _persist_snapshot()
 
     except Exception as e:
         JOBS[job_id]["status"] = "error"
         JOBS[job_id]["error"]  = str(e)
-        # Marcar el paso en curso como error
         for s in JOBS[job_id]["steps"]:
             if s.status == StepStatus.IN_PROGRESS:
                 s.status  = StepStatus.ERROR
                 s.message = str(e)
         print(f"[JOB {job_id}] ERROR: {traceback.format_exc()}")
+        _persist_snapshot()
 
     finally:
         # Limpiar archivos temporales del job (omitible con KEEP_TMP_FILES=true
@@ -160,8 +209,13 @@ async def _run_analysis(job_id: str, nii_path: Path, model: ModelType,
             _cleanup(job_id)
 
 
+def _pct(value):
+    """Formatea como porcentaje o '—' si es None."""
+    return f"{value * 100:.1f}%" if value is not None else "—"
+
+
 def _generate_report(job_id: str, result: AnalysisResult):
-    """Genera reporte .txt descargable."""
+    """Genera reporte .txt descargable. Soporta clasificación y segmentación."""
     report_path = TMP_DIR / f"{job_id}_report.txt"
     lines = [
         "=" * 55,
@@ -172,26 +226,51 @@ def _generate_report(job_id: str, result: AnalysisResult):
         f"  Modelo      : {result.model_used.value}",
         f"  Tiempo      : {result.processing_time_s} s",
         "-" * 55,
-        "  RESULTADO",
-        f"  Predicción  : {'POSIBLE EPILEPSIA' if result.prediction == 'epilepsy' else 'CONTROL'}",
-        f"  Confianza   : {result.confidence * 100:.1f}%",
-        f"  P(Epilepsia): {result.prob_epilepsy * 100:.1f}%",
-        f"  P(Control)  : {result.prob_control * 100:.1f}%",
-        "-" * 55,
-        "  MÉTRICAS DEL MODELO (validación)",
-        f"  AUC-ROC     : {result.model_auc * 100:.1f}%",
-        f"  Sensibilidad: {result.model_sensitivity * 100:.1f}%",
-        f"  Especificidad:{result.model_specificity * 100:.1f}%",
-        f"  Exactitud   : {result.model_accuracy * 100:.1f}%",
     ]
-    if result.gm_volume_cm3:
+
+    # ── Bloque CLASIFICACIÓN (solo si hay predicción) ─────────────────────
+    if result.prediction is not None:
         lines += [
+            "  RESULTADO (clasificación)",
+            f"  Predicción  : {'POSIBLE EPILEPSIA' if result.prediction == 'epilepsy' else 'CONTROL'}",
+            f"  Confianza   : {_pct(result.confidence)}",
+            f"  P(Epilepsia): {_pct(result.prob_epilepsy)}",
+            f"  P(Control)  : {_pct(result.prob_control)}",
             "-" * 55,
-            "  FEATURES VOLUMÉTRICOS",
-            f"  Volumen GM  : {result.gm_volume_cm3:.2f} cm³",
-            f"  Densidad GM : {result.gm_mean_density:.4f}",
-            f"  Vóxeles GM  : {result.gm_voxels}",
+            "  MÉTRICAS DEL MODELO (validación)",
+            f"  AUC-ROC     : {_pct(result.model_auc)}",
+            f"  Sensibilidad: {_pct(result.model_sensitivity)}",
+            f"  Especificidad:{_pct(result.model_specificity)}",
+            f"  Exactitud   : {_pct(result.model_accuracy)}",
         ]
+        if result.gm_volume_cm3:
+            lines += [
+                "-" * 55,
+                "  FEATURES VOLUMÉTRICOS",
+                f"  Volumen GM  : {result.gm_volume_cm3:.2f} cm³",
+                f"  Densidad GM : {result.gm_mean_density:.4f}",
+                f"  Vóxeles GM  : {result.gm_voxels}",
+            ]
+
+    # ── Bloque SEGMENTACIÓN (solo si hay máscara) ─────────────────────────
+    if result.mask_filename is not None:
+        lines += [
+            "  RESULTADO (segmentación nnU-Net)",
+            f"  Vóxeles máscara    : {result.mask_voxels}",
+            f"  Volumen total      : {result.mask_volume_cm3:.2f} cm³",
+            f"  Clusters conexos   : {result.n_clusters}",
+            f"  Cluster más grande : {result.largest_cluster_cm3:.2f} cm³",
+            "-" * 55,
+            "  MÉTRICAS DEL MODELO (evaluación · 778 sujetos)",
+            f"  DSC (mediana)      : {_pct(result.model_dsc)}",
+            f"  Hausdorff 95% (mediana): "
+            + (f"{result.model_hd95:.2f} mm" if result.model_hd95 is not None else "—"),
+            f"  Sensibilidad (sujeto): {_pct(result.model_seg_sensitivity)}",
+            f"  Especificidad (sujeto): {_pct(result.model_seg_specificity)}",
+            f"  VPP                : {_pct(result.model_seg_ppv)}",
+            f"  VPN                : {_pct(result.model_seg_npv)}",
+        ]
+
     if result.notes:
         lines += ["-" * 55, "  NOTAS CLÍNICAS", f"  {result.notes}"]
     lines += [
@@ -206,14 +285,50 @@ def _generate_report(job_id: str, result: AnalysisResult):
 
 
 def _cleanup(job_id: str):
-    """Elimina archivos temporales del job (NIfTI procesados)."""
+    """
+    Elimina archivos temporales del job.
+
+    Excepción: jobs nnUNet — conservamos `t1.nii.gz` y `nnunet_out/<case>.nii.gz`
+    porque el visor del frontend los consume después de que el job termine
+    (via /t1/{job_id} y /mask/{job_id}). Borramos el resto (input crudo,
+    intermediarios, _0000 duplicado).
+    """
     job_tmp = TMP_DIR / job_id
-    if job_tmp.exists():
-        import shutil
+    if not job_tmp.exists():
+        return
+
+    result = JOBS.get(job_id, {}).get("result")
+    is_nnunet = result is not None and result.model_used == ModelType.NNUNET
+
+    import shutil
+    if not is_nnunet:
         try:
             shutil.rmtree(job_tmp)
         except Exception:
             pass
+        return
+
+    # nnUNet: borrar todo excepto el T1 servido y la máscara generada.
+    keep = {
+        job_tmp / (result.t1_filename or ""),
+        job_tmp / "nnunet_out" / (result.mask_filename or ""),
+    }
+    for path in job_tmp.rglob("*"):
+        if path.is_dir():
+            continue
+        if path in keep:
+            continue
+        try:
+            path.unlink()
+        except Exception:
+            pass
+    # Eliminar carpetas vacías (deja nnunet_out si retiene la máscara)
+    for sub in sorted(job_tmp.rglob("*"), reverse=True):
+        if sub.is_dir():
+            try:
+                sub.rmdir()
+            except OSError:
+                pass
 
 
 # ─── ENDPOINTS ────────────────────────────────────────────────────────────────
@@ -299,4 +414,60 @@ def download_report(job_id: str):
         path=report_path,
         filename=f"vbm_reporte_{job_id}.txt",
         media_type="text/plain",
+    )
+
+
+# ─── Endpoints del visor (nnUNet) ─────────────────────────────────────────────
+# El frontend (NiiVue) consume estos dos archivos para renderizar el T1 +
+# overlay de la máscara segmentada.
+
+def _resolve_job_file(job_id: str, kind: str) -> Path:
+    if job_id not in JOBS:
+        raise HTTPException(status_code=404, detail="Job no encontrado")
+    result = JOBS[job_id].get("result")
+    if result is None:
+        raise HTTPException(status_code=404, detail="Job sin resultado disponible")
+    if result.model_used != ModelType.NNUNET:
+        raise HTTPException(
+            status_code=400,
+            detail=f"El modelo {result.model_used.value} no genera archivos para el visor",
+        )
+
+    job_dir = TMP_DIR / job_id
+    if kind == "t1":
+        fname = result.t1_filename
+        path  = job_dir / (fname or "")
+    elif kind == "mask":
+        fname = result.mask_filename
+        path  = job_dir / "nnunet_out" / (fname or "")
+    else:
+        raise HTTPException(status_code=400, detail=f"Kind inválido: {kind}")
+
+    if not fname or not path.exists():
+        raise HTTPException(
+            status_code=404,
+            detail=f"Archivo {kind} no encontrado para el job {job_id}",
+        )
+    return path
+
+
+@router.get("/t1/{job_id}")
+def get_t1(job_id: str):
+    """T1 servido al visor NiiVue (después del job nnUNet)."""
+    path = _resolve_job_file(job_id, "t1")
+    return FileResponse(
+        path=path,
+        filename=f"t1_{job_id}.nii.gz",
+        media_type="application/gzip",
+    )
+
+
+@router.get("/mask/{job_id}")
+def get_mask(job_id: str):
+    """Máscara binaria producida por nnUNet (overlay en el visor)."""
+    path = _resolve_job_file(job_id, "mask")
+    return FileResponse(
+        path=path,
+        filename=f"mask_{job_id}.nii.gz",
+        media_type="application/gzip",
     )

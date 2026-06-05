@@ -24,6 +24,12 @@ joblib==1.4.2
 deepmriprep==0.2.0
 antspyx==0.5.4         # dependencia de deepmriprep para resampling
 
+# ─── Segmentación nnU-Net (modelo de localización de zonas epileptogénicas) ──
+# Pipeline 3D fullres con transfer learning desde modelo TBI (Castaño 2025).
+# Inferencia en CPU funciona pero es lenta (~15-30 min); con GPU NVIDIA <60s.
+nnunetv2==2.5.1
+SimpleITK==2.4.0       # I/O de NIfTI usado internamente por nnU-Net
+
 # ─── Utilidades ───────────────────────────────────────────────────────────────
 pydantic==2.9.2
 scipy==1.13.1

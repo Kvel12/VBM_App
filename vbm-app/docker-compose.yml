@@ -45,11 +45,10 @@ services:
     #           count: 1
     #           capabilities: [gpu]
     restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
+    # Healthcheck deshabilitado: la inferencia nnUNet en CPU bloquea el thread
+    # principal por 5-7 min, lo que hacía que /health no respondiera a tiempo
+    # y Docker reiniciara el container a mitad de inferencia. Para una app
+    # single-user no aporta valor — el frontend ya hace polling de /status.
 
   frontend:
     build:

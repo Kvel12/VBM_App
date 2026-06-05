@@ -184,6 +184,37 @@ body { font-family:'Outfit',system-ui,sans-serif; background:var(--bg); color:va
   color:var(--t3); border-left:3px solid var(--border); background:var(--bg);
   border-radius:0 6px 6px 0;
 }
+.threshold-info {
+  margin-top:16px; padding:12px 14px; border-radius:10px;
+  background:var(--pl); border:1px solid oklch(0.86 0.06 235);
+}
+.threshold-info-title { font-size:13px; font-weight:700; color:var(--pd); margin-bottom:5px; }
+.threshold-info-body  { font-size:12.5px; line-height:1.55; color:var(--pd); }
+
+/* ── Marcador vertical del umbral clínico sobre la barra Epilepsia ── */
+.threshold-marker {
+  position:absolute; top:-4px; bottom:-4px; width:2px;
+  background:var(--text); transform:translateX(-1px); z-index:2;
+  box-shadow:0 0 0 1px rgba(255,255,255,0.6);
+}
+.threshold-marker::before {
+  content:''; position:absolute; top:-2px; left:-3px;
+  border:4px solid transparent; border-top-color:var(--text);
+}
+.threshold-marker-label {
+  position:absolute; top:14px; transform:translateX(-50%);
+  font-size:10px; font-weight:600; color:var(--t2);
+  white-space:nowrap; pointer-events:none;
+}
+
+/* ── Banner de caso ambiguo (P(epi) > 50% pero < umbral clínico) ── */
+.ambiguous-alert {
+  margin-bottom:18px; padding:14px 18px; border-radius:12px;
+  background:var(--warnl); border:1.5px solid var(--warn);
+  color:oklch(.40 .12 65);
+}
+.ambiguous-alert-title { font-size:14px; font-weight:800; letter-spacing:.4px; margin-bottom:6px; }
+.ambiguous-alert-body  { font-size:13px; line-height:1.55; }
 
 /* ── Option toggle (checkbox + label + hint) ── */
 .opt-toggle {
@@ -296,4 +327,178 @@ body { font-family:'Outfit',system-ui,sans-serif; background:var(--bg); color:va
   .about-logo-uv  { height:80px; }
   .about-logo-lab { height:50px; }
   .about-grid { grid-template-columns:1fr; }
+}
+
+/* ─── Verdict banner (clasificación derivada de segmentación nnUNet) ───── */
+.seg-verdict {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 18px;
+  border-radius: 12px;
+  margin-bottom: 18px;
+  border: 1px solid var(--border);
+}
+.seg-verdict.sv-pos {
+  background: linear-gradient(90deg, rgba(239,68,68,0.10), rgba(239,68,68,0.04));
+  border-color: rgba(239,68,68,0.35);
+}
+.seg-verdict.sv-neg {
+  background: linear-gradient(90deg, rgba(16,185,129,0.10), rgba(16,185,129,0.04));
+  border-color: rgba(16,185,129,0.35);
+}
+.seg-verdict-main {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.seg-verdict-icon {
+  font-size: 32px;
+  line-height: 1;
+}
+.sv-pos .seg-verdict-icon { color: var(--bad); }
+.sv-neg .seg-verdict-icon { color: var(--ok); }
+.seg-verdict-title {
+  font-weight: 700;
+  font-size: 17px;
+  color: var(--text);
+}
+.sv-pos .seg-verdict-title { color: var(--bad); }
+.sv-neg .seg-verdict-title { color: var(--ok); }
+.seg-verdict-sub {
+  font-size: 13px;
+  color: var(--t2);
+  margin-top: 2px;
+}
+.seg-verdict-conf {
+  text-align: right;
+  flex-shrink: 0;
+}
+.seg-verdict-conf-val {
+  font-size: 26px;
+  font-weight: 800;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.sv-pos .seg-verdict-conf-val { color: var(--bad); }
+.sv-neg .seg-verdict-conf-val { color: var(--ok); }
+.seg-verdict-conf-lab {
+  font-size: 10.5px;
+  color: var(--t3);
+  text-transform: uppercase;
+  letter-spacing: .5px;
+  margin-top: 3px;
+}
+
+/* ─── Visor NiiVue (T1 + overlay máscara) ─────────────────────────────── */
+.niivue-wrap {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--s1);
+  padding: 14px;
+  margin-top: 8px;
+}
+.niivue-toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 18px;
+  padding: 6px 4px 14px 4px;
+  border-bottom: 1px dashed var(--border);
+  margin-bottom: 12px;
+}
+.niivue-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--t2);
+}
+.niivue-label {
+  font-weight: 600;
+  color: var(--t2);
+  text-transform: uppercase;
+  font-size: 11px;
+  letter-spacing: 0.4px;
+}
+.niivue-select {
+  padding: 5px 9px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--s2);
+  color: var(--text);
+  font-size: 13px;
+  cursor: pointer;
+}
+.niivue-toggle { cursor: pointer; user-select: none; }
+.niivue-toggle input { cursor: pointer; transform: translateY(1px); }
+.niivue-slider input[type=range] {
+  width: 130px;
+  cursor: pointer;
+}
+.niivue-slider input[type=range]:disabled { opacity: 0.4; cursor: not-allowed; }
+.niivue-value {
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+  color: var(--t3);
+  min-width: 36px;
+  text-align: right;
+}
+/* Layout 2-columnas para resultados de segmentación */
+.seg-layout {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 22px;
+  align-items: start;
+}
+.seg-data { min-width: 0; }
+.seg-viewer { min-width: 0; }
+
+@media(max-width: 1000px) {
+  .seg-layout { grid-template-columns: 1fr; }
+}
+
+.niivue-canvas-wrap {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  background: #000;
+  border-radius: 8px;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.niivue-canvas {
+  max-width: 100%;
+  max-height: 100%;
+  /* Suavizado bilinear: la slice cropeada se escala 4-5×; pixelated se vería
+     muy blocky, smoothing 'auto' da el balance correcto entre nitidez y suavidad. */
+  image-rendering: auto;
+  display: block;
+}
+.niivue-slider input[type=range] { width: 100%; min-width: 80px; }
+.niivue-toolbar { gap: 12px; }
+.niivue-field { flex: 1 1 auto; min-width: 0; }
+@media(max-width: 880px) {
+  .niivue-toolbar { gap: 10px; }
+}
+.niivue-loading {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #aaa;
+  font-size: 14px;
+  background: rgba(0,0,0,0.55);
+  z-index: 1;
+  pointer-events: none;
+}
+.niivue-hint {
+  margin-top: 10px;
+  font-size: 12px;
+  color: var(--t3);
+  line-height: 1.5;
 }

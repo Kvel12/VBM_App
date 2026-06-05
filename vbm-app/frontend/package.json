@@ -9,6 +9,8 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "nifti-reader-js": "^0.6.8",
+    "pako": "^2.1.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },

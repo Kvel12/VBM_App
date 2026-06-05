@@ -3,11 +3,10 @@
 
 const API_BASE = '/api/v1';
 
-// El backend espera ModelType ∈ { deepmriprep, hybrid, nnunet }.
+// El backend espera ModelType ∈ { deepmriprep, nnunet }.
 // Los ids del frontend coinciden 1:1 con los del backend.
 const MODEL_ID_MAP = {
   deepmriprep: 'deepmriprep',
-  hybrid: 'hybrid',
   nnunet: 'nnunet',
 };
 
@@ -52,3 +51,23 @@ export const getStatus = async (jobId) => {
 // URL al reporte .txt generado por el backend (no se descarga aquí — el
 // frontend usa su propio genTxt localizado en ResultsScreen).
 export const getReportURL = (jobId) => `${API_BASE}/report/${jobId}`;
+
+// URLs del visor nnUNet — NiiVue los carga directamente vía fetch interno.
+// Ambos archivos son .nii.gz; el backend sirve el T1 cargado y la máscara
+// binaria producida por el modelo de segmentación.
+export const getT1URL   = (jobId) => `${API_BASE}/t1/${jobId}`;
+export const getMaskURL = (jobId) => `${API_BASE}/mask/${jobId}`;
+
+// Descarga forzada de la máscara como archivo .nii.gz (botón "Descargar máscara").
+export const downloadMask = async (jobId, suggestedName) => {
+  const response = await fetch(getMaskURL(jobId));
+  if (!response.ok) throw new Error(await parseError(response));
+  const blob = await response.blob();
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = suggestedName || `mask_${jobId}.nii.gz`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(a.href);
+};

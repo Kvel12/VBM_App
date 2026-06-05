@@ -118,7 +118,7 @@ const App = () => {
           />
         )}
         {screen === 'results' && (
-          <ResultsScreen model={model} info={info} file={file} result={result} onReset={reset} />
+          <ResultsScreen model={model} info={info} file={file} jobId={jobId} result={result} onReset={reset} />
         )}
         {screen === 'about' && <AboutScreen onBack={backFromAbout} />}
       </main>
