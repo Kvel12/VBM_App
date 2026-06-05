@@ -3,31 +3,31 @@ import * as nifti from 'nifti-reader-js';
 import pako from 'pako';
 import { useT } from '../i18n/LanguageContext.jsx';
 
-// ─── Visor de NIfTI 2D (axial / coronal / sagital) ─────────────────────────
+// ─── 2D NIfTI viewer (axial / coronal / sagittal) ───────────────────────────
 //
-// Reemplazo de NiiVue: usamos nifti-reader-js + canvas2d para tener control
-// total sobre el render — sin WebGL, sin overhead de la librería 3D, exactamente
-// las 3 vistas anatómicas con overlay rojo de la máscara binaria.
+// Replacement for NiiVue: we use nifti-reader-js + canvas2d for full control
+// over the render — no WebGL, no 3D library overhead, exactly the 3
+// anatomical views with a red overlay of the binary mask.
 //
-// Trabaja en RAS espacial (x=L→R, y=P→A, z=I→S). Asume que las imágenes están
-// en orientación estándar (la T1 sin reorientar + máscara nnUNet en el mismo
-// espacio, que es lo que produce el pipeline).
+// Works in spatial RAS (x=L→R, y=P→A, z=I→S). Assumes images are in standard
+// orientation (raw T1 without reorientation + nnUNet mask in the same space,
+// which is what the pipeline produces).
 //
-// Performance: render por slice ≈ 8-15ms en canvas 512×512.
+// Performance: per-slice render ≈ 8-15ms on a 512×512 canvas.
 
 const VIEWS = [
-  { key: 'axial',    axis: 2 },   // slices del eje Z (I-S)
-  { key: 'coronal',  axis: 1 },   // slices del eje Y (P-A)
-  { key: 'sagittal', axis: 0 },   // slices del eje X (L-R)
+  { key: 'axial',    axis: 2 },   // slices on the Z axis (I-S)
+  { key: 'coronal',  axis: 1 },   // slices on the Y axis (P-A)
+  { key: 'sagittal', axis: 0 },   // slices on the X axis (L-R)
 ];
 
-/** Descarga + descomprime + parsea un .nii.gz → { header, data, dims } */
+/** Download + decompress + parse a .nii.gz → { header, data, dims } */
 async function fetchVolume(url) {
   const res = await fetch(url);
   if (!res.ok) throw new Error(`HTTP ${res.status} fetching ${url}`);
   const buf = await res.arrayBuffer();
 
-  // .nii.gz → descomprimir; .nii → usar directo
+  // .nii.gz → decompress; .nii → use directly
   let raw;
   if (nifti.isCompressed(buf)) {
     raw = pako.inflate(new Uint8Array(buf)).buffer;
@@ -40,7 +40,7 @@ async function fetchVolume(url) {
   const header = nifti.readHeader(raw);
   const image  = nifti.readImage(header, raw);
 
-  // Tipar el array según datatypeCode
+  // Type the array according to datatypeCode
   const data = toTypedArray(image, header.datatypeCode);
   const dims = [header.dims[1], header.dims[2], header.dims[3]];
   return { header, data, dims };
@@ -60,13 +60,13 @@ function toTypedArray(buffer, code) {
   }
 }
 
-/** Extrae una slice 2D de un volumen 3D según el eje. Devuelve {w, h, pixels}. */
+/** Extract a 2D slice from a 3D volume along the given axis. Returns {w, h, pixels}. */
 function sliceVolume(volume, axis, sliceIdx) {
   const [nx, ny, nz] = volume.dims;
   const data = volume.data;
   let w, h, out;
 
-  if (axis === 2) {           // AXIAL (Z fija) → plano XY
+  if (axis === 2) {           // AXIAL (fixed Z) → XY plane
     w = nx; h = ny;
     out = new Float32Array(w * h);
     for (let y = 0; y < h; y++) {
@@ -74,7 +74,7 @@ function sliceVolume(volume, axis, sliceIdx) {
         out[y * w + x] = data[sliceIdx * nx * ny + y * nx + x];
       }
     }
-  } else if (axis === 1) {    // CORONAL (Y fija) → plano XZ
+  } else if (axis === 1) {    // CORONAL (fixed Y) → XZ plane
     w = nx; h = nz;
     out = new Float32Array(w * h);
     for (let z = 0; z < h; z++) {
@@ -82,7 +82,7 @@ function sliceVolume(volume, axis, sliceIdx) {
         out[z * w + x] = data[z * nx * ny + sliceIdx * nx + x];
       }
     }
-  } else {                    // SAGITTAL (X fija) → plano YZ
+  } else {                    // SAGITTAL (fixed X) → YZ plane
     w = ny; h = nz;
     out = new Float32Array(w * h);
     for (let z = 0; z < h; z++) {
@@ -95,16 +95,16 @@ function sliceVolume(volume, axis, sliceIdx) {
 }
 
 /**
- * Calcula el bounding-box 3D del cerebro en el volumen completo (índices
- * mínimos/máximos donde la intensidad > threshold). Se computa UNA VEZ por
- * volumen y se reusa en cada render — sin coste por slice.
+ * Compute the brain's 3D bounding box in the full volume (min/max indices
+ * where intensity > threshold). It is computed ONCE per volume and reused
+ * on every render — no per-slice cost.
  *
- * Devuelve [[xMin, xMax], [yMin, yMax], [zMin, zMax]] con un margen de 4 vox.
+ * Returns [[xMin, xMax], [yMin, yMax], [zMin, zMax]] with a 4-voxel margin.
  */
 function computeBoundingBox(volume) {
   const [nx, ny, nz] = volume.dims;
   const data = volume.data;
-  // Threshold robusto: 5% del percentil 99 (filtra ruido de fondo)
+  // Robust threshold: 5% of the 99th percentile (filters background noise)
   const sample = new Float32Array(Math.min(30000, data.length));
   for (let i = 0; i < sample.length; i++) sample[i] = data[(Math.random() * data.length) | 0];
   sample.sort();
@@ -131,7 +131,7 @@ function computeBoundingBox(volume) {
   ];
 }
 
-/** Recorta una slice 2D a una región rectangular [[xMin,xMax],[yMin,yMax]] */
+/** Crop a 2D slice to a rectangular region [[xMin,xMax],[yMin,yMax]] */
 function cropSlice(slice, bbox) {
   const { w, h, pixels } = slice;
   const [[x0, x1], [y0, y1]] = bbox;
@@ -146,7 +146,7 @@ function cropSlice(slice, bbox) {
   return { w: cw, h: ch, pixels: out };
 }
 
-/** Bounding box 2D que corresponde a una vista dada (axis ∈ {0,1,2}). */
+/** 2D bounding box corresponding to a given view (axis ∈ {0,1,2}). */
 function sliceBboxFor(axis, bbox3d) {
   const [[x0, x1], [y0, y1], [z0, z1]] = bbox3d;
   if (axis === 2) return [[x0, x1], [y0, y1]];   // axial: XY
@@ -154,7 +154,7 @@ function sliceBboxFor(axis, bbox3d) {
   return [[y0, y1], [z0, z1]];                    // sagittal: YZ
 }
 
-/** Dibuja T1 en grises + máscara roja en un canvas. */
+/** Draw T1 in grayscale + red mask onto a canvas. */
 function renderSlice(canvas, t1Slice, maskSlice, showMask, opacity, t1Min, t1Max) {
   const { w, h, pixels: t1 } = t1Slice;
   canvas.width  = w;
@@ -165,17 +165,17 @@ function renderSlice(canvas, t1Slice, maskSlice, showMask, opacity, t1Min, t1Max
   const range   = (t1Max - t1Min) || 1;
 
   for (let i = 0; i < t1.length; i++) {
-    // Normalizar T1 a 0-255
+    // Normalize T1 to 0-255
     let v = (t1[i] - t1Min) / range;
     v = Math.max(0, Math.min(1, v));
     let r = (v * 255) | 0;
     let g = r, b = r;
 
-    // Overlay rojo de la máscara (alpha-blending)
+    // Red overlay of the mask (alpha-blending)
     if (showMask && maskSlice) {
       const m = maskSlice.pixels[i];
       if (m > 0) {
-        // Mezclar: pixel = (1-α)·gris + α·rojo
+        // Blend: pixel = (1-α)·gray + α·red
         r = (r * (1 - opacity) + 255 * opacity) | 0;
         g = (g * (1 - opacity)) | 0;
         b = (b * (1 - opacity)) | 0;
@@ -191,9 +191,9 @@ function renderSlice(canvas, t1Slice, maskSlice, showMask, opacity, t1Min, t1Max
   ctx.putImageData(imgData, 0, 0);
 }
 
-/** Estadísticas min/max ignorando outliers (percentil 1-99 para mejor contraste) */
+/** min/max stats ignoring outliers (1st-99th percentile for better contrast) */
 function computeIntensityRange(data) {
-  // Muestreo: 50k voxeles aleatorios suficientes para percentiles estables
+  // Sampling: 50k random voxels are enough for stable percentiles
   const n = data.length;
   const sample = new Float32Array(Math.min(50000, n));
   for (let i = 0; i < sample.length; i++) {
@@ -211,7 +211,7 @@ const NiiVueViewer = ({ t1Url, maskUrl, onError }) => {
   const t1Ref     = useRef(null);
   const maskRef   = useRef(null);
   const rangeRef  = useRef([0, 1]);
-  const bboxRef   = useRef(null);   // bounding box 3D del cerebro (en voxeles)
+  const bboxRef   = useRef(null);   // brain 3D bounding box (in voxels)
 
   const [viewKey,     setViewKey]     = useState('axial');
   const [sliceIdx,    setSliceIdx]    = useState(0);
@@ -221,7 +221,7 @@ const NiiVueViewer = ({ t1Url, maskUrl, onError }) => {
   const [loading,     setLoading]     = useState(true);
   const [errorMsg,    setErrorMsg]    = useState(null);
 
-  // ── Carga inicial de ambos volúmenes en paralelo ──────────────────────
+  // ── Initial load of both volumes in parallel ──────────────────────────
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -242,7 +242,7 @@ const NiiVueViewer = ({ t1Url, maskUrl, onError }) => {
         rangeRef.current = computeIntensityRange(t1Vol.data);
         bboxRef.current  = computeBoundingBox(t1Vol);
 
-        // Slice central por defecto en axial
+        // Default to the central axial slice
         const axis = VIEWS.find((v) => v.key === viewKey).axis;
         const sliceCount = t1Vol.dims[axis];
         setMaxSlice(sliceCount - 1);
@@ -260,7 +260,7 @@ const NiiVueViewer = ({ t1Url, maskUrl, onError }) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [t1Url, maskUrl]);
 
-  // ── Cambio de vista: resetea slice al centro del nuevo eje ───────────
+  // ── View change: reset slice to the center of the new axis ──────────
   useEffect(() => {
     if (!t1Ref.current) return;
     const axis = VIEWS.find((v) => v.key === viewKey).axis;
@@ -269,15 +269,15 @@ const NiiVueViewer = ({ t1Url, maskUrl, onError }) => {
     setSliceIdx(Math.floor(count / 2));
   }, [viewKey]);
 
-  // ── Render reactivo cada vez que cambia slice/overlay/opacity ───────
+  // ── Reactive render whenever slice/overlay/opacity changes ──────────
   useEffect(() => {
     if (!t1Ref.current || !canvasRef.current) return;
     const axis = VIEWS.find((v) => v.key === viewKey).axis;
     let t1Slice   = sliceVolume(t1Ref.current, axis, sliceIdx);
     let maskSlice = maskRef.current ? sliceVolume(maskRef.current, axis, sliceIdx) : null;
 
-    // Auto-crop al bounding box del cerebro — quita el FOV vacío y la imagen
-    // ocupa todo el canvas (≈ 2× más grande visualmente).
+    // Auto-crop to the brain bounding box — removes the empty FOV and the
+    // image fills the whole canvas (≈ 2× larger visually).
     if (bboxRef.current) {
       const slice2dBbox = sliceBboxFor(axis, bboxRef.current);
       t1Slice = cropSlice(t1Slice, slice2dBbox);

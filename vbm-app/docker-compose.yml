@@ -1,17 +1,17 @@
 # ─────────────────────────────────────────────────────────────────────────────
 # VBM App — Docker Compose
 #
-# Uso:
-#   docker compose up --build         # primera vez
-#   docker compose up                 # siguientes veces
-#   docker compose down               # bajar
+# Usage:
+#   docker compose up --build         # first time
+#   docker compose up                 # subsequent runs
+#   docker compose down               # tear down
 #
-# Pipeline actual: deepmriprep (PyTorch puro) + CNN MedicalNet ResNet-18.
-# (SPM12 + MCR R2024b descartados en migración por irreproducibilidad
-#  cross-platform — ver Dockerfile y app/pipelines/deepmriprep_pipeline.py)
+# Current pipeline: deepmriprep (pure PyTorch) + CNN MedicalNet ResNet-18.
+# (SPM12 + MCR R2024b discarded during migration due to cross-platform
+#  irreproducibility — see Dockerfile and app/pipelines/deepmriprep_pipeline.py)
 #
-# Assets pesados (NO están en git — montados desde el host):
-#   backend/models/  → deepmriprep_cnn_fold3.pt  (~130 MB, modelo CNN)
+# Heavy assets (NOT in git — mounted from the host):
+#   backend/models/  → deepmriprep_cnn_fold3.pt  (~130 MB, CNN model)
 # ─────────────────────────────────────────────────────────────────────────────
 
 services:
@@ -24,19 +24,19 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      # Modelo CNN montado desde el host (no se mete en la imagen)
+      # CNN model mounted from the host (not baked into the image)
       - ./backend/models:/app/models:ro
-      # Temporal de procesamiento (lectura/escritura)
+      # Processing scratch directory (read/write)
       - ./backend/tmp:/app/tmp
     environment:
       - ROBEX_DIR=/opt/ROBEX
-      # ── Flags de diagnóstico ─────────────────────────────────────────────
-      # KEEP_TMP_FILES=true → no borra /app/tmp/<job_id>/ al terminar
-      #                       (útil para inspeccionar mwp1*.nii.gz intermedios)
+      # ── Diagnostic flags ─────────────────────────────────────────────────
+      # KEEP_TMP_FILES=true → does not delete /app/tmp/<job_id>/ on completion
+      #                       (useful to inspect intermediate mwp1*.nii.gz)
       - KEEP_TMP_FILES=true
-    # Sin GPU: comentar o eliminar el bloque deploy
-    # Con GPU NVIDIA: descomentar (requiere nvidia-container-toolkit en el host)
-    # deepmriprep auto-detecta GPU vía torch.cuda.is_available()
+    # No GPU: comment out or remove the deploy block
+    # With NVIDIA GPU: uncomment (requires nvidia-container-toolkit on the host)
+    # deepmriprep auto-detects GPU via torch.cuda.is_available()
     # deploy:
     #   resources:
     #     reservations:
@@ -45,10 +45,10 @@ services:
     #           count: 1
     #           capabilities: [gpu]
     restart: unless-stopped
-    # Healthcheck deshabilitado: la inferencia nnUNet en CPU bloquea el thread
-    # principal por 5-7 min, lo que hacía que /health no respondiera a tiempo
-    # y Docker reiniciara el container a mitad de inferencia. Para una app
-    # single-user no aporta valor — el frontend ya hace polling de /status.
+    # Healthcheck disabled: nnUNet CPU inference blocks the main thread for
+    # 5-7 min, which caused /health to not respond in time and Docker to
+    # restart the container mid-inference. For a single-user app it brings
+    # no value — the frontend already polls /status.
 
   frontend:
     build:
@@ -56,7 +56,7 @@ services:
       dockerfile: Dockerfile
     container_name: vbm_frontend
     ports:
-      - "3000:80"       # Nginx sirve el build de React en el puerto 80 interno
+      - "3000:80"       # Nginx serves the React build on internal port 80
     depends_on:
       - backend
     restart: unless-stopped

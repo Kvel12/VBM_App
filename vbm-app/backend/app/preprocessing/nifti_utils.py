@@ -1,6 +1,6 @@
 """
-nifti_utils.py — Validación y utilidades para archivos NIfTI
-Verifica que la imagen T1 sea válida antes de entrar al pipeline.
+nifti_utils.py — Validation and utilities for NIfTI files
+Verifies that the T1 image is valid before entering the pipeline.
 """
 
 import gzip
@@ -13,22 +13,22 @@ import numpy as np
 from app.config import TMP_DIR, VBM_PARAMS
 
 
-# ─── Validación y carga ───────────────────────────────────────────────────────
+# ─── Validation and loading ──────────────────────────────────────────────────
 
 def validate_and_load(nii_path: Path) -> Path:
     """
-    Valida que el archivo sea un NIfTI T1 utilizable y lo descomprime
-    si viene en .nii.gz. Retorna la ruta al .nii descomprimido.
+    Validates that the file is a usable T1 NIfTI and decompresses it
+    if it arrived as .nii.gz. Returns the path to the decompressed .nii.
 
     Checks:
-    - El archivo existe y no está vacío
-    - Es un NIfTI válido (nibabel puede leerlo)
-    - Es 3D (no 4D funcional)
-    - Tiene dimensiones razonables para una T1 estructural
-    - Los valores de intensidad no son todos cero
+    - The file exists and is non-empty
+    - It is a valid NIfTI (nibabel can read it)
+    - It is 3D (not 4D functional)
+    - It has reasonable dimensions for a structural T1
+    - Intensity values are not all zero
 
     Raises:
-        ValueError: si alguna validación falla, con mensaje descriptivo.
+        ValueError: if any validation fails, with a descriptive message.
     """
     nii_path = Path(nii_path)
 
@@ -37,11 +37,11 @@ def validate_and_load(nii_path: Path) -> Path:
     if nii_path.stat().st_size == 0:
         raise ValueError(f"El archivo está vacío: {nii_path.name}")
 
-    # Descomprimir .nii.gz si es necesario
+    # Decompress .nii.gz if needed
     if nii_path.suffix == ".gz":
         nii_path = _decompress_gz(nii_path)
 
-    # Intentar cargar con nibabel
+    # Try loading with nibabel
     try:
         img = nib.load(str(nii_path))
     except Exception as e:
@@ -49,7 +49,7 @@ def validate_and_load(nii_path: Path) -> Path:
 
     shape = img.shape
 
-    # Debe ser 3D
+    # Must be 3D
     if len(shape) < 3:
         raise ValueError(
             f"La imagen tiene {len(shape)} dimensiones. Se esperan 3 (T1 estructural)."
@@ -59,7 +59,7 @@ def validate_and_load(nii_path: Path) -> Path:
             f"La imagen es 4D ({shape}). Solo se aceptan imágenes T1 estructurales 3D."
         )
 
-    # Dimensiones mínimas razonables para una T1 cerebral
+    # Minimum reasonable dimensions for a brain T1
     min_dim = 64
     if any(d < min_dim for d in shape[:3]):
         raise ValueError(
@@ -67,7 +67,7 @@ def validate_and_load(nii_path: Path) -> Path:
             f"Se esperan al menos {min_dim} vóxeles por eje."
         )
 
-    # Dimensiones máximas (evitar imágenes de cuerpo entero o mal formateo)
+    # Maximum dimensions (avoid whole-body images or bad formatting)
     max_dim = 600
     if any(d > max_dim for d in shape[:3]):
         raise ValueError(
@@ -75,13 +75,13 @@ def validate_and_load(nii_path: Path) -> Path:
             f"Verifica que sea una imagen T1 cerebral."
         )
 
-    # Verificar que no sea todo ceros
+    # Check that the image is not all zeros
     try:
         data = np.asarray(img.dataobj, dtype=np.float32)
         if np.max(np.abs(data)) < 1e-6:
             raise ValueError("La imagen no contiene datos de intensidad (todos los vóxeles son cero).")
     except MemoryError:
-        # Imagen muy grande — no podemos validar los datos, continuamos
+        # Very large image — we cannot validate the data, continue
         pass
 
     return nii_path
@@ -89,12 +89,12 @@ def validate_and_load(nii_path: Path) -> Path:
 
 def _decompress_gz(gz_path: Path) -> Path:
     """
-    Descomprime un .nii.gz al mismo directorio y retorna la ruta del .nii.
-    Si el .nii ya existe (de una ejecución previa), lo reutiliza.
+    Decompress a .nii.gz into the same directory and return the .nii path.
+    If the .nii already exists (from a previous run), reuse it.
     """
-    # Manejar tanto sub.nii.gz como sub.nii (doble extensión)
+    # Handle both sub.nii.gz and sub.nii (double extension)
     if gz_path.stem.endswith(".nii"):
-        out_path = gz_path.parent / gz_path.stem   # quita .gz → .nii
+        out_path = gz_path.parent / gz_path.stem   # strip .gz → .nii
     else:
         out_path = gz_path.parent / (gz_path.stem + ".nii")
 
@@ -108,12 +108,12 @@ def _decompress_gz(gz_path: Path) -> Path:
     return out_path
 
 
-# ─── Información de la imagen ─────────────────────────────────────────────────
+# ─── Image info ──────────────────────────────────────────────────────────────
 
 def get_image_info(nii_path: Path) -> dict:
     """
-    Retorna un dict con información básica de la imagen NIfTI.
-    Útil para logging y diagnóstico.
+    Return a dict with basic info about the NIfTI image.
+    Useful for logging and diagnostics.
     """
     img    = nib.load(str(nii_path))
     vox    = np.sqrt(np.sum(img.affine[:3, :3] ** 2, axis=0))
@@ -125,30 +125,30 @@ def get_image_info(nii_path: Path) -> dict:
     }
 
 
-# ─── Features volumétricos desde mwp1 ────────────────────────────────────────
+# ─── Volumetric features from mwp1 ───────────────────────────────────────────
 
 def extract_volumetric_features(gm_map_path: Path) -> dict:
     """
-    Extrae features escalares del mapa GM modulado (mwp1) producido por SPM12.
-    Estos features alimentan el SVM en el pipeline híbrido.
+    Extract scalar features from the modulated GM map (mwp1) produced by SPM12.
+    These features feed the SVM in the hybrid pipeline.
 
-    El umbral 0.1 es el mismo usado en el script MATLAB de entrenamiento
-    (run_vbm_spm12_checkpoint.m, Fase 4).
+    The 0.1 threshold is the same one used in the MATLAB training script
+    (run_vbm_spm12_checkpoint.m, Phase 4).
 
     Returns:
-        dict con gm_volume_mm3, gm_volume_cm3, gm_mean_density,
-        gm_std_density, gm_voxels, percentiles y shape.
+        dict with gm_volume_mm3, gm_volume_cm3, gm_mean_density,
+        gm_std_density, gm_voxels, percentiles and shape.
     """
     threshold = VBM_PARAMS["gm_threshold"]  # 0.1
 
     img  = nib.load(str(gm_map_path))
     data = np.asarray(img.dataobj, dtype=np.float32)
 
-    # Tamaño de vóxel en mm
+    # Voxel size in mm
     vox     = np.sqrt(np.sum(img.affine[:3, :3] ** 2, axis=0))
     vox_vol = float(np.prod(vox))
 
-    # Máscara GM
+    # GM mask
     mask    = data > threshold
     n_vox   = int(np.sum(mask))
 
@@ -177,10 +177,10 @@ def extract_volumetric_features(gm_map_path: Path) -> dict:
         "voxel_size_mm":    tuple(round(float(v), 3) for v in vox),
     }
 
-    # Verificar shape esperado
+    # Verify the expected shape
     expected = tuple(VBM_PARAMS["expected_shape"])
     if data.shape != expected:
-        # No es error fatal — solo advertencia, puede haber diferencia por bb
+        # Not fatal — only a warning, may differ due to bb
         features["shape_warning"] = (
             f"Shape {data.shape} difiere del esperado {expected}. "
             "Verifica los parámetros de normalización."

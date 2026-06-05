@@ -40,8 +40,16 @@ body { font-family:'Outfit',system-ui,sans-serif; background:var(--bg); color:va
   position:sticky; top:0; z-index:100;
   height:62px; background:var(--surface);
   border-bottom:1px solid var(--border);
-  display:flex; align-items:center; gap:10px; padding:0 32px;
+  display:grid; grid-template-columns:1fr auto 1fr; align-items:center; padding:0 32px;
   box-shadow:0 1px 0 var(--border);
+}
+.nav-left   { display:flex; align-items:center; gap:10px; justify-self:start; }
+.nav-center { display:flex; align-items:center; justify-content:center; min-height:32px; }
+.nav-model  { display:flex; align-items:center; gap:10px; }
+.nav-model-name { font-size:14px; color:var(--t2); font-weight:600; }
+.nav-version {
+  font-size:12px; color:var(--t3); background:var(--s2);
+  padding:2px 9px; border-radius:99px; margin-left:4px;
 }
 .nav-title { font-size:18px; font-weight:700; letter-spacing:-.3px; }
 .nav-title em { color:var(--primary); font-style:normal; }
@@ -63,8 +71,8 @@ body { font-family:'Outfit',system-ui,sans-serif; background:var(--bg); color:va
 .btn-p:disabled { opacity:.4; cursor:not-allowed; }
 .btn-g  { background:transparent; color:var(--t2); border:1px solid var(--border); }
 .btn-g:hover { background:var(--s2); color:var(--text); }
-.btn-d  { background:transparent; color:var(--bad); border:1.5px solid var(--bad); }
-.btn-d:hover { background:var(--badl); }
+.btn-d  { background:var(--bad); color:#fff; border:1.5px solid var(--bad); }
+.btn-d:hover { background:oklch(0.50 0.20 25); border-color:oklch(0.50 0.20 25); transform:translateY(-1px); box-shadow:0 5px 14px oklch(.56 .20 25 / .35); }
 .btn-ok { background:var(--ok); color:#fff; }
 .btn-ok:hover { filter:brightness(.91); transform:translateY(-1px); }
 .btn-lg { padding:15px 30px; font-size:16px; border-radius:12px; }
@@ -122,9 +130,9 @@ body { font-family:'Outfit',system-ui,sans-serif; background:var(--bg); color:va
 
 /* ── Steps ── */
 .slist { display:flex; flex-direction:column; }
-.srow  { display:flex; align-items:flex-start; gap:16px; padding:13px 0; position:relative; }
+.srow  { display:flex; align-items:center; gap:16px; padding:14px 0; position:relative; }
 .srow:not(:last-child)::after {
-  content:''; position:absolute; left:19px; top:53px; bottom:-13px; width:2px; background:var(--border);
+  content:''; position:absolute; left:19px; top:62px; bottom:-14px; width:2px; background:var(--border);
 }
 .srow.done::after, .srow.act::after { background:var(--pl); }
 .sdot {
@@ -136,13 +144,20 @@ body { font-family:'Outfit',system-ui,sans-serif; background:var(--bg); color:va
 .srow.done .sdot { background:var(--primary); border-color:var(--primary); color:#fff; font-size:18px; }
 .srow.act  .sdot { border-color:var(--primary); background:var(--pl); animation:pulse 1.5s ease infinite; }
 .srow.pend .sdot { opacity:.4; }
-.sinfo { flex:1; padding-top:9px; }
-.sname { font-size:14.5px; font-weight:500; }
+.sinfo { flex:1; min-width:0; display:flex; flex-direction:column; justify-content:center; }
+.sname { font-size:14.5px; font-weight:500; line-height:1.3; }
 .srow.act  .sname { color:var(--primary); font-weight:600; }
 .srow.pend .sname { color:var(--t3); }
-.sdet { font-size:12.5px; color:var(--t3); margin-top:3px; }
+.sdet { font-size:12.5px; color:var(--t3); margin-top:4px; line-height:1.4; }
 .srow.done .sdet { color:var(--ok); }
 .srow.act  .sdet { color:var(--pd); }
+.s-badge {
+  flex-shrink:0; margin-left:14px;
+  font-size:10.5px; font-weight:700; letter-spacing:.6px;
+  color:var(--primary); background:var(--pl);
+  padding:4px 9px; border-radius:99px;
+  text-transform:uppercase;
+}
 
 /* ── Spinner ── */
 .spin { width:18px; height:18px; border-radius:50%; border:2.5px solid oklch(.50 .18 242 / .2); border-top-color:var(--primary); animation:spin .75s linear infinite; flex-shrink:0; }
@@ -176,7 +191,9 @@ body { font-family:'Outfit',system-ui,sans-serif; background:var(--bg); color:va
 .pbt  { height:10px; border-radius:5px; background:var(--s2); overflow:hidden; }
 .pbf  { height:100%; border-radius:5px; transition:width 1.3s ease; }
 .mtiles { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin-top:20px; }
-.mtile  { background:var(--s2); border-radius:10px; padding:14px; text-align:center; }
+.mtile  { background:var(--s2); border-radius:10px; padding:14px; text-align:center; position:relative; }
+.mtile.tw { display:flex; flex-direction:column; cursor:help; }
+.mtile.tw .tt { white-space:normal; max-width:240px; }
 .mv     { font-size:20px; font-weight:700; color:var(--primary); }
 .ml     { font-size:11px; color:var(--t3); text-transform:uppercase; letter-spacing:.4px; margin-top:2px; }
 .fold-note {
@@ -191,7 +208,7 @@ body { font-family:'Outfit',system-ui,sans-serif; background:var(--bg); color:va
 .threshold-info-title { font-size:13px; font-weight:700; color:var(--pd); margin-bottom:5px; }
 .threshold-info-body  { font-size:12.5px; line-height:1.55; color:var(--pd); }
 
-/* ── Marcador vertical del umbral clínico sobre la barra Epilepsia ── */
+/* ── Vertical marker for the clinical threshold on the Epilepsy bar ── */
 .threshold-marker {
   position:absolute; top:-4px; bottom:-4px; width:2px;
   background:var(--text); transform:translateX(-1px); z-index:2;
@@ -207,7 +224,7 @@ body { font-family:'Outfit',system-ui,sans-serif; background:var(--bg); color:va
   white-space:nowrap; pointer-events:none;
 }
 
-/* ── Banner de caso ambiguo (P(epi) > 50% pero < umbral clínico) ── */
+/* ── Ambiguous-case banner (P(epi) > 50% but < clinical threshold) ── */
 .ambiguous-alert {
   margin-bottom:18px; padding:14px 18px; border-radius:12px;
   background:var(--warnl); border:1.5px solid var(--warn);
@@ -256,7 +273,7 @@ body { font-family:'Outfit',system-ui,sans-serif; background:var(--bg); color:va
 ::-webkit-scrollbar-thumb { background:var(--border); border-radius:3px; }
 
 /* ── Nav right cluster (model badge + About + lang toggle) ── */
-.nav-right { margin-left:auto; display:flex; align-items:center; gap:14px; }
+.nav-right { display:flex; align-items:center; gap:14px; justify-self:end; }
 .nav-about {
   background:none; border:none; padding:6px 10px; border-radius:8px;
   font-family:inherit; font-size:13.5px; font-weight:500; color:var(--t2);
@@ -329,7 +346,7 @@ body { font-family:'Outfit',system-ui,sans-serif; background:var(--bg); color:va
   .about-grid { grid-template-columns:1fr; }
 }
 
-/* ─── Verdict banner (clasificación derivada de segmentación nnUNet) ───── */
+/* ─── Verdict banner (classification derived from nnUNet segmentation) ── */
 .seg-verdict {
   display: flex;
   align-items: center;
@@ -391,7 +408,7 @@ body { font-family:'Outfit',system-ui,sans-serif; background:var(--bg); color:va
   margin-top: 3px;
 }
 
-/* ─── Visor NiiVue (T1 + overlay máscara) ─────────────────────────────── */
+/* ─── NiiVue viewer (T1 + mask overlay) ────────────────────────────────── */
 .niivue-wrap {
   border: 1px solid var(--border);
   border-radius: 12px;
@@ -445,7 +462,7 @@ body { font-family:'Outfit',system-ui,sans-serif; background:var(--bg); color:va
   min-width: 36px;
   text-align: right;
 }
-/* Layout 2-columnas para resultados de segmentación */
+/* 2-column layout for segmentation results */
 .seg-layout {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -473,8 +490,9 @@ body { font-family:'Outfit',system-ui,sans-serif; background:var(--bg); color:va
 .niivue-canvas {
   max-width: 100%;
   max-height: 100%;
-  /* Suavizado bilinear: la slice cropeada se escala 4-5×; pixelated se vería
-     muy blocky, smoothing 'auto' da el balance correcto entre nitidez y suavidad. */
+  /* Bilinear smoothing: the cropped slice is scaled 4-5×; pixelated would
+     look too blocky, 'auto' smoothing gives the right balance between
+     sharpness and smoothness. */
   image-rendering: auto;
   display: block;
 }

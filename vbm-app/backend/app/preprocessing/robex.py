@@ -1,22 +1,22 @@
 """
-robex.py — Skull stripping con ROBEX (paso OPCIONAL)
+robex.py — Skull stripping with ROBEX (OPTIONAL step)
 
-DECISIÓN DE DISEÑO CRÍTICA:
-  El pipeline de entrenamiento (run_vbm_spm12_checkpoint.m en el iMac) pasaba
-  la T1 DIRECTAMENTE a SPM12 Unified Segmentation sin skull stripping previo.
-  SPM12 hace su propia extracción de cerebro internamente.
+CRITICAL DESIGN DECISION:
+  The training pipeline (run_vbm_spm12_checkpoint.m on the iMac) passed the
+  T1 DIRECTLY to SPM12 Unified Segmentation without prior skull stripping.
+  SPM12 performs its own brain extraction internally.
 
-  Agregar ROBEX antes de SPM12 en inferencia produce mapas GM diferentes a los
-  del entrenamiento (~28.000 vóxeles extra para sub-102), lo que degrada las
-  predicciones del CNN.
+  Adding ROBEX before SPM12 at inference time produces GM maps that differ
+  from the training ones (~28,000 extra voxels for sub-102), which degrades
+  the CNN predictions.
 
-  POR TANTO: skull_strip() retorna la T1 cruda por defecto (skip_robex=True).
-  ROBEX solo se usaría si en el futuro se reentrenara el modelo con ROBEX
-  como paso previo explícito.
+  THEREFORE: skull_strip() returns the raw T1 by default (skip_robex=True).
+  ROBEX would only be used if the model were retrained in the future with
+  ROBEX as an explicit prior step.
 
-  La función se mantiene implementada para no romper la arquitectura del
-  backend ni el frontend (que muestra "Extracción de cráneo · ROBEX" como paso).
-  En la UI ese paso se completa instantáneamente con el mensaje correcto.
+  The function is kept implemented so we don't break the backend or frontend
+  architecture (which displays "Extracción de cráneo · ROBEX" as a step).
+  In the UI that step completes instantly with the correct message.
 """
 
 import time
@@ -28,20 +28,20 @@ from app.config import ROBEX_DIR, ROBEX_SCRIPT, TMP_DIR
 def skull_strip(t1_path: Path, job_id: str,
                 skip_robex: bool = True) -> Path:
     """
-    Paso de skull stripping del pipeline.
+    Skull-stripping step of the pipeline.
 
-    Por defecto skip_robex=True: retorna la T1 original sin modificar.
-    Esto replica exactamente el pipeline de entrenamiento (SPM12 directo).
+    By default skip_robex=True: returns the original T1 unmodified.
+    This exactly replicates the training pipeline (SPM12 direct).
 
     Args:
-        t1_path:    Ruta al .nii de entrada (ya descomprimido).
-        job_id:     ID del job (para logging).
-        skip_robex: Si True (defecto), retorna t1_path sin modificar.
-                    SPM12 Unified Segmentation hace su propia extracción
-                    de cerebro internamente — no se necesita ROBEX previo.
+        t1_path:    Path to the input .nii (already decompressed).
+        job_id:     Job ID (for logging).
+        skip_robex: If True (default), returns t1_path unmodified.
+                    SPM12 Unified Segmentation performs its own brain
+                    extraction internally — no prior ROBEX is required.
 
     Returns:
-        Path a la imagen que entrará a SPM12 (cruda o stripped).
+        Path to the image that will enter SPM12 (raw or stripped).
     """
     t1_path = Path(t1_path)
 
@@ -50,7 +50,7 @@ def skull_strip(t1_path: Path, job_id: str,
               f"(replica pipeline de entrenamiento)")
         return t1_path
 
-    # ── Skull stripping activo (solo si skip_robex=False) ─────────────────────
+    # ── Active skull stripping (only if skip_robex=False) ─────────────────────
     import subprocess
 
     job_dir       = TMP_DIR / job_id

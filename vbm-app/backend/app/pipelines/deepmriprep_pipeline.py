@@ -1,23 +1,23 @@
 """
-deepmriprep_pipeline.py — Pipeline VBM con deepmriprep + CNN para inferencia
+deepmriprep_pipeline.py — VBM pipeline with deepmriprep + CNN for inference
 
-Reemplaza al antiguo SPM12/DARTEL (descartado por irreproducibilidad cross-platform).
-deepmriprep es un toolkit Python puro basado en PyTorch que hace:
+Replaces the old SPM12/DARTEL (discarded for cross-platform irreproducibility).
+deepmriprep is a pure-Python toolkit based on PyTorch that performs:
   - Brain extraction (deepbet)
   - Tissue segmentation (3D UNet)
   - Spatial registration to MNI152 (sSYMNet)
-  - Modulation (preserva volumen con jacobiano)
+  - Modulation (preserves volume with the jacobian)
 
-Output: mwp1*.nii.gz — mapa de materia gris modulado en espacio MNI152
-        (mismo formato que producía SPM12, pero reproducible bit-a-bit
-         entre Linux/macOS/Windows porque toda la cadena son modelos
-         PyTorch deterministas).
+Output: mwp1*.nii.gz — modulated gray matter map in MNI152 space
+        (same format that SPM12 produced, but reproducible bit-for-bit
+         across Linux/macOS/Windows because the whole chain is made of
+         deterministic PyTorch models).
 
-Flujo (steps del frontend ModelType.DEEPMRIPREP):
-  1. Cargando imagen T1            ← routes.py
-  2. (Opcional) ROBEX skull strip  ← routes.py (toggle use_robex)
-  3. Preprocesamiento VBM          ← este módulo (deepmriprep)
-  4. Clasificación CNN             ← este módulo
+Flow (ModelType.DEEPMRIPREP frontend steps):
+  1. Loading T1 image              ← routes.py
+  2. (Optional) ROBEX skull strip  ← routes.py (use_robex toggle)
+  3. VBM preprocessing             ← this module (deepmriprep)
+  4. CNN classification            ← this module
 """
 
 import torch
@@ -33,19 +33,19 @@ from app.preprocessing.nifti_utils import extract_volumetric_features
 def run(brain_path: Path, job_id: str,
         update_step: Callable, metadata: dict) -> AnalysisResult:
     """
-    Pipeline deepmriprep + CNN.
+    deepmriprep + CNN pipeline.
 
     Args:
-        brain_path:  T1 (cruda o post-ROBEX según toggle use_robex).
-        job_id:      ID del job.
+        brain_path:  T1 (raw or post-ROBEX depending on the use_robex toggle).
+        job_id:      Job ID.
         update_step: callback(job_id, step_num, StepStatus, msg=None)
-        metadata:    dict con test_name, patient_name, notes, use_robex.
+        metadata:    dict with test_name, patient_name, notes, use_robex.
     """
     brain_path = Path(brain_path)
     job_dir    = TMP_DIR / job_id
     job_dir.mkdir(parents=True, exist_ok=True)
 
-    # ── Paso 3: deepmriprep — brain extraction + seg + MNI + modulación ──────
+    # ── Step 3: deepmriprep — brain extraction + seg + MNI + modulation ──────
     update_step(job_id, 3, StepStatus.IN_PROGRESS,
                 "Preprocesamiento VBM con deepmriprep (deepbet + UNet + sSYMNet)...")
     try:
@@ -57,13 +57,13 @@ def run(brain_path: Path, job_id: str,
     update_step(job_id, 3, StepStatus.COMPLETED,
                 f"mapa GM: {gm_map_path.name}")
 
-    # Features volumétricos para el reporte (no afectan la predicción CNN)
+    # Volumetric features for the report (do not affect CNN prediction)
     try:
         vol_features = extract_volumetric_features(gm_map_path)
     except Exception:
         vol_features = {}
 
-    # ── Paso 4: CNN predicción ────────────────────────────────────────────────
+    # ── Step 4: CNN prediction ───────────────────────────────────────────────
     update_step(job_id, 4, StepStatus.IN_PROGRESS,
                 "Clasificación CNN (MedicalNet ResNet-18 fold 3)...")
     try:
@@ -76,13 +76,13 @@ def run(brain_path: Path, job_id: str,
                 f"P(epilepsia)={cnn_result['prob_epilepsy']:.2f} "
                 f"[umbral={cnn_result['threshold_used']}]")
 
-    # ── Resultado ─────────────────────────────────────────────────────────────
+    # ── Result ────────────────────────────────────────────────────────────────
     return AnalysisResult(
         prediction        = cnn_result["prediction"],
         confidence        = cnn_result["confidence"],
         prob_epilepsy     = cnn_result["prob_epilepsy"],
         prob_control      = cnn_result["prob_control"],
-        # Métricas del fold 3 (mejor fold, representativo para la app)
+        # Fold 3 metrics (best fold, representative for the app)
         model_auc         = CNN_MODEL_METRICS["auc"],
         model_sensitivity = CNN_MODEL_METRICS["sensitivity"],
         model_specificity = CNN_MODEL_METRICS["specificity"],
@@ -97,17 +97,17 @@ def run(brain_path: Path, job_id: str,
     )
 
 
-# ─── Wrapper de deepmriprep ───────────────────────────────────────────────────
+# ─── deepmriprep wrapper ─────────────────────────────────────────────────────
 
 def _run_deepmriprep(t1_path: Path, job_dir: Path) -> Path:
     """
-    Ejecuta el pipeline deepmriprep con outputs='vbm' (produce mwp1*.nii.gz).
-    Auto-detecta GPU vía torch.cuda.is_available().
+    Runs the deepmriprep pipeline with outputs='vbm' (produces mwp1*.nii.gz).
+    Auto-detects GPU via torch.cuda.is_available().
 
     Returns:
-        Path al archivo mwp1*.nii.gz generado.
+        Path to the generated mwp1*.nii.gz file.
     """
-    # Import perezoso — deepmriprep es pesado (carga modelos al importar)
+    # Lazy import — deepmriprep is heavy (loads models on import)
     from deepmriprep import run_preprocess
 
     out_dir = job_dir / "deepmriprep_out"
@@ -120,16 +120,16 @@ def _run_deepmriprep(t1_path: Path, job_dir: Path) -> Path:
         input_paths      = [str(t1_path)],
         output_dir       = str(out_dir),
         outputs          = 'vbm',
-        dir_format       = 'sub',         # crea subcarpeta por sujeto
+        dir_format       = 'sub',         # create one subfolder per subject
         no_gpu           = no_gpu,
         skip_broken      = True,
         skip_unprocessed = True,
     )
 
-    # Buscar el mwp1*.nii.gz recursivamente (compat con dir_format='sub'/'flat')
+    # Look for mwp1*.nii.gz recursively (compat with dir_format='sub'/'flat')
     candidates = list(out_dir.rglob('mwp1*.nii.gz'))
     if not candidates:
-        # Fallback: mwp1 sin .gz (algunas versiones de deepmriprep)
+        # Fallback: mwp1 without .gz (some deepmriprep versions)
         candidates = list(out_dir.rglob('mwp1*.nii'))
     if not candidates:
         raise RuntimeError(

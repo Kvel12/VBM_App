@@ -1,8 +1,8 @@
 """
-routes.py — Endpoints de la API VBM
-POST /analyze  → sube T1 + metadatos, crea job, retorna job_id
-GET  /status/{job_id} → polling del estado
-GET  /report/{job_id} → descarga reporte .txt
+routes.py — VBM API endpoints
+POST /analyze  → uploads T1 + metadata, creates a job, returns job_id
+GET  /status/{job_id} → polls the job status
+GET  /report/{job_id} → downloads the .txt report
 """
 
 import os
@@ -18,13 +18,13 @@ from fastapi.responses import FileResponse
 
 from app.config import TMP_DIR, API_CONFIG
 
-# Flags de runtime (set en docker-compose.yml o `docker compose run -e`)
-# KEEP_TMP_FILES=true → no borra /app/tmp/<job_id>/ al terminar,
-#                        para poder inspeccionar mwp1*.nii y batches .m
+# Runtime flags (set via docker-compose.yml or `docker compose run -e`)
+# KEEP_TMP_FILES=true → does not delete /app/tmp/<job_id>/ on completion,
+#                        so we can inspect mwp1*.nii and .m batches.
 #
-# Nota: SKIP_ROBEX se retiró — ROBEX siempre se omite por defecto (decisión
-# de diseño documentada en app/preprocessing/robex.py) para coincidir con el
-# pipeline de entrenamiento.
+# Note: SKIP_ROBEX was removed — ROBEX is always skipped by default (design
+# decision documented in app/preprocessing/robex.py) to match the training
+# pipeline.
 def _truthy(env_value: str) -> bool:
     return (env_value or "").lower() in ("1", "true", "yes", "on")
 
@@ -36,14 +36,14 @@ from app.api.schemas import (
 
 router = APIRouter()
 
-# ─── Store de jobs (memoria + persistencia ligera en disco) ──────────────────
-# Estructura: { job_id: { "status": ..., "steps": [...], "result": ... } }
+# ─── Job store (memory + lightweight persistence on disk) ────────────────────
+# Structure: { job_id: { "status": ..., "steps": [...], "result": ... } }
 #
-# Persistencia: se guarda un snapshot de "ID de job + status + paso final" a
-# disco cada vez que se actualiza un paso. Si el container muere y reinicia,
-# el endpoint /status puede devolver "error" en lugar de 404 → el frontend
-# muestra un mensaje útil ("el backend reinició a mitad del análisis") en
-# lugar del genérico "Job no encontrado".
+# Persistence: a snapshot of "job ID + status + final step" is saved to disk
+# every time a step is updated. If the container dies and restarts, the
+# /status endpoint can return "error" instead of 404 → the frontend shows a
+# useful message ("the backend restarted mid-analysis") instead of the
+# generic "Job not found".
 import json as _json
 
 JOBS: dict = {}
@@ -51,7 +51,7 @@ _PERSIST_FILE = TMP_DIR / "_jobs_snapshot.json"
 
 
 def _persist_snapshot():
-    """Guarda un snapshot serializable del dict JOBS — silencioso si falla."""
+    """Save a serializable snapshot of the JOBS dict — silent on failure."""
     try:
         snapshot = {}
         for jid, j in JOBS.items():
@@ -67,9 +67,9 @@ def _persist_snapshot():
 
 def _load_snapshot_on_start():
     """
-    Al arrancar, lee jobs previos del disco. Si alguno quedó "running" o
-    "pending" → lo marcamos como "error" porque el container reinició a
-    mitad. El frontend lo verá como fallo en lugar de 404.
+    At startup, read previous jobs from disk. Any job left as "running" or
+    "pending" → mark it as "error" because the container restarted mid-job.
+    The frontend will see it as a failure instead of a 404.
     """
     if not _PERSIST_FILE.exists():
         return
@@ -92,13 +92,13 @@ def _load_snapshot_on_start():
         }
 
 
-# Cargar snapshot al importar el módulo (uvicorn lo importa una sola vez por proceso).
+# Load snapshot on module import (uvicorn imports it once per process).
 _load_snapshot_on_start()
 
 
-# ─── Helpers ──────────────────────────────────────────────────────────────────
+# ─── Helpers ─────────────────────────────────────────────────────────────────
 def _steps_for_model(model: ModelType) -> list[ProcessStep]:
-    """Retorna la lista de pasos según el modelo seleccionado."""
+    """Return the list of steps for the selected model."""
     base = [
         ProcessStep(step=1, name="Cargando imagen T1",       status=StepStatus.PENDING),
         ProcessStep(step=2, name="Extracción de cráneo · ROBEX", status=StepStatus.PENDING),
@@ -119,40 +119,76 @@ def _steps_for_model(model: ModelType) -> list[ProcessStep]:
 
 
 def _update_step(job_id: str, step_num: int, status: StepStatus, msg: str = None):
-    """Actualiza el estado de un paso específico."""
+    """
+    Update a single step's status. The overall progress percentage uses
+    a weighted scheme so the bar moves smoothly even within a long step:
+      - COMPLETED  → counts as 1.0
+      - IN_PROGRESS → counts as 0.5 (half-credit, so the bar climbs as
+                       soon as a step starts, instead of jumping only when
+                       a step finishes — relevant for nnUNet inference
+                       which takes 5-7 min as a single big step).
+      - PENDING/ERROR → 0.0
+    """
     for s in JOBS[job_id]["steps"]:
         if s.step == step_num:
             s.status  = status
             s.message = msg
             break
-    completed = sum(1 for s in JOBS[job_id]["steps"] if s.status == StepStatus.COMPLETED)
-    total     = len(JOBS[job_id]["steps"])
-    JOBS[job_id]["progress"] = int((completed / total) * 100)
+
+    weight_map = {
+        StepStatus.COMPLETED:   1.0,
+        StepStatus.IN_PROGRESS: 0.5,
+    }
+    total       = len(JOBS[job_id]["steps"])
+    accumulated = sum(weight_map.get(s.status, 0.0) for s in JOBS[job_id]["steps"])
+    JOBS[job_id]["progress"] = int((accumulated / total) * 100)
     _persist_snapshot()
 
 
-# ─── Background task principal ────────────────────────────────────────────────
+def _update_substep(job_id: str, step_num: int, fraction: float, msg: str = None):
+    """
+    Optional finer-grained progress within a single step (0.0-1.0). Used by
+    long-running pipelines (e.g. nnUNet inference) to nudge the global bar
+    forward while a single step is still running.
+    """
+    fraction = max(0.0, min(1.0, fraction))
+    weight_map = {StepStatus.COMPLETED: 1.0}
+    total = len(JOBS[job_id]["steps"])
+    accumulated = 0.0
+    for s in JOBS[job_id]["steps"]:
+        if s.step == step_num and s.status == StepStatus.IN_PROGRESS:
+            accumulated += fraction
+            if msg:
+                s.message = msg
+        else:
+            accumulated += weight_map.get(s.status, 0.0)
+    JOBS[job_id]["progress"] = int((accumulated / total) * 100)
+    _persist_snapshot()
+
+
+# ─── Main background task ────────────────────────────────────────────────────
 async def _run_analysis(job_id: str, nii_path: Path, model: ModelType,
                         metadata: dict):
     """
-    Ejecuta el pipeline completo en background.
-    Actualiza JOBS[job_id] en cada paso para que el polling lo vea.
+    Runs the full pipeline in the background.
+    Updates JOBS[job_id] on each step so polling can observe progress.
     """
     start = time.time()
     JOBS[job_id]["status"] = "running"
 
     try:
-        # ── Paso 1: Cargar imagen ──────────────────────────────────────────
+        # ── Step 1: Load image ─────────────────────────────────────────────
         _update_step(job_id, 1, StepStatus.IN_PROGRESS, "Validando archivo NIfTI")
         from app.preprocessing.nifti_utils import validate_and_load
         t1_path = validate_and_load(nii_path)
         _update_step(job_id, 1, StepStatus.COMPLETED)
 
-        # ── Paso 2: Skull stripping opcional (controlado por use_robex) ───
-        # Por defecto (use_robex=False): la T1 pasa directamente a deepmriprep
-        # — deepmriprep hace brain extraction internamente con deepbet.
-        # Si use_robex=True: ROBEX se aplica antes (útil si el usuario tiene
-        # una T1 con cráneo y prefiere skull-stripping clásico explícito).
+        # ── Step 2: Optional skull stripping (controlled by use_robex) ─────
+        # Default (use_robex=False): the T1 is passed directly to deepmriprep
+        # — deepmriprep performs brain extraction internally with deepbet.
+        # If use_robex=True: ROBEX is applied beforehand (useful when the
+        # user already has a T1 with skull and prefers an explicit classic
+        # skull-stripping).
         use_robex = bool(metadata.get("use_robex", False))
         _update_step(job_id, 2, StepStatus.IN_PROGRESS,
                      "Aplicando ROBEX..." if use_robex else "Validando imagen T1...")
@@ -162,7 +198,7 @@ async def _run_analysis(job_id: str, nii_path: Path, model: ModelType,
                      "Skull stripping ROBEX aplicado" if use_robex
                      else "T1 pasa directamente a deepmriprep")
 
-        # ── Pasos siguientes según modelo ──────────────────────────────────
+        # ── Following steps depend on the selected model ───────────────────
         if model == ModelType.DEEPMRIPREP:
             from app.pipelines.deepmriprep_pipeline import run as run_dmp
             result = await asyncio.to_thread(run_dmp, brain_path, job_id,
@@ -176,7 +212,7 @@ async def _run_analysis(job_id: str, nii_path: Path, model: ModelType,
         else:
             raise ValueError(f"Modelo no soportado: {model}")
 
-        # ── Resultado final ────────────────────────────────────────────────
+        # ── Final result ───────────────────────────────────────────────────
         result.processing_time_s = round(time.time() - start, 1)
         result.test_name         = metadata.get("test_name", "")
         result.patient_name      = metadata.get("patient_name")
@@ -186,7 +222,7 @@ async def _run_analysis(job_id: str, nii_path: Path, model: ModelType,
         JOBS[job_id]["status"]   = "completed"
         JOBS[job_id]["progress"] = 100
 
-        # Generar reporte .txt
+        # Generate .txt report
         _generate_report(job_id, result)
         _persist_snapshot()
 
@@ -201,8 +237,8 @@ async def _run_analysis(job_id: str, nii_path: Path, model: ModelType,
         _persist_snapshot()
 
     finally:
-        # Limpiar archivos temporales del job (omitible con KEEP_TMP_FILES=true
-        # para poder inspeccionar mwp1*.nii, rc1*.nii, batches .m, etc.)
+        # Clean up temporary job files (skippable with KEEP_TMP_FILES=true
+        # so we can inspect mwp1*.nii, rc1*.nii, .m batches, etc.)
         if KEEP_TMP_FILES:
             print(f"[JOB {job_id}] KEEP_TMP_FILES=true — intermediarios en {TMP_DIR / job_id}")
         else:
@@ -210,12 +246,12 @@ async def _run_analysis(job_id: str, nii_path: Path, model: ModelType,
 
 
 def _pct(value):
-    """Formatea como porcentaje o '—' si es None."""
+    """Format as percentage or '—' if None."""
     return f"{value * 100:.1f}%" if value is not None else "—"
 
 
 def _generate_report(job_id: str, result: AnalysisResult):
-    """Genera reporte .txt descargable. Soporta clasificación y segmentación."""
+    """Generate a downloadable .txt report. Supports classification and segmentation."""
     report_path = TMP_DIR / f"{job_id}_report.txt"
     lines = [
         "=" * 55,
@@ -228,7 +264,7 @@ def _generate_report(job_id: str, result: AnalysisResult):
         "-" * 55,
     ]
 
-    # ── Bloque CLASIFICACIÓN (solo si hay predicción) ─────────────────────
+    # ── CLASSIFICATION block (only if there is a prediction) ──────────────
     if result.prediction is not None:
         lines += [
             "  RESULTADO (clasificación)",
@@ -252,7 +288,7 @@ def _generate_report(job_id: str, result: AnalysisResult):
                 f"  Vóxeles GM  : {result.gm_voxels}",
             ]
 
-    # ── Bloque SEGMENTACIÓN (solo si hay máscara) ─────────────────────────
+    # ── SEGMENTATION block (only if there is a mask) ──────────────────────
     if result.mask_filename is not None:
         lines += [
             "  RESULTADO (segmentación nnU-Net)",
@@ -286,12 +322,12 @@ def _generate_report(job_id: str, result: AnalysisResult):
 
 def _cleanup(job_id: str):
     """
-    Elimina archivos temporales del job.
+    Delete the job's temporary files.
 
-    Excepción: jobs nnUNet — conservamos `t1.nii.gz` y `nnunet_out/<case>.nii.gz`
-    porque el visor del frontend los consume después de que el job termine
-    (via /t1/{job_id} y /mask/{job_id}). Borramos el resto (input crudo,
-    intermediarios, _0000 duplicado).
+    Exception: nnUNet jobs — we keep `t1.nii.gz` and `nnunet_out/<case>.nii.gz`
+    because the frontend viewer consumes them after the job finishes
+    (via /t1/{job_id} and /mask/{job_id}). We delete everything else (raw
+    input, intermediates, _0000 duplicate).
     """
     job_tmp = TMP_DIR / job_id
     if not job_tmp.exists():
@@ -308,7 +344,7 @@ def _cleanup(job_id: str):
             pass
         return
 
-    # nnUNet: borrar todo excepto el T1 servido y la máscara generada.
+    # nnUNet: delete everything except the served T1 and the generated mask.
     keep = {
         job_tmp / (result.t1_filename or ""),
         job_tmp / "nnunet_out" / (result.mask_filename or ""),
@@ -322,7 +358,7 @@ def _cleanup(job_id: str):
             path.unlink()
         except Exception:
             pass
-    # Eliminar carpetas vacías (deja nnunet_out si retiene la máscara)
+    # Remove empty folders (keep nnunet_out if it still holds the mask)
     for sub in sorted(job_tmp.rglob("*"), reverse=True):
         if sub.is_dir():
             try:
@@ -331,7 +367,7 @@ def _cleanup(job_id: str):
                 pass
 
 
-# ─── ENDPOINTS ────────────────────────────────────────────────────────────────
+# ─── ENDPOINTS ───────────────────────────────────────────────────────────────
 
 @router.post("/analyze", response_model=JobCreatedResponse)
 async def analyze(
@@ -343,7 +379,7 @@ async def analyze(
     notes:        str        = Form(""),
     use_robex:    bool       = Form(False),
 ):
-    # Validar extensión
+    # Validate extension
     filename = file.filename or ""
     if not (filename.endswith(".nii") or filename.endswith(".nii.gz")):
         raise HTTPException(
@@ -351,7 +387,7 @@ async def analyze(
             detail="Solo se aceptan archivos .nii o .nii.gz"
         )
 
-    # Validar tamaño
+    # Validate size
     max_bytes = API_CONFIG["max_upload_mb"] * 1024 * 1024
     content   = await file.read()
     if len(content) > max_bytes:
@@ -360,14 +396,14 @@ async def analyze(
             detail=f"Archivo demasiado grande (máx {API_CONFIG['max_upload_mb']} MB)"
         )
 
-    # Guardar en tmp
+    # Save into tmp
     job_id  = str(uuid.uuid4())[:8]
     job_dir = TMP_DIR / job_id
     job_dir.mkdir(parents=True, exist_ok=True)
     nii_path = job_dir / filename
     nii_path.write_bytes(content)
 
-    # Registrar job
+    # Register job
     JOBS[job_id] = {
         "status":   "pending",
         "progress": 0,
@@ -417,9 +453,9 @@ def download_report(job_id: str):
     )
 
 
-# ─── Endpoints del visor (nnUNet) ─────────────────────────────────────────────
-# El frontend (NiiVue) consume estos dos archivos para renderizar el T1 +
-# overlay de la máscara segmentada.
+# ─── Viewer endpoints (nnUNet) ───────────────────────────────────────────────
+# The frontend (NiiVue) consumes these two files to render the T1 + the
+# overlay of the segmented mask.
 
 def _resolve_job_file(job_id: str, kind: str) -> Path:
     if job_id not in JOBS:
@@ -453,7 +489,7 @@ def _resolve_job_file(job_id: str, kind: str) -> Path:
 
 @router.get("/t1/{job_id}")
 def get_t1(job_id: str):
-    """T1 servido al visor NiiVue (después del job nnUNet)."""
+    """T1 served to the NiiVue viewer (after the nnUNet job)."""
     path = _resolve_job_file(job_id, "t1")
     return FileResponse(
         path=path,
@@ -464,7 +500,7 @@ def get_t1(job_id: str):
 
 @router.get("/mask/{job_id}")
 def get_mask(job_id: str):
-    """Máscara binaria producida por nnUNet (overlay en el visor)."""
+    """Binary mask produced by nnUNet (overlay in the viewer)."""
     path = _resolve_job_file(job_id, "mask")
     return FileResponse(
         path=path,

@@ -5,9 +5,9 @@ import NiiVueViewer from '../components/NiiVueViewer.jsx';
 import { useT, useLang } from '../i18n/LanguageContext.jsx';
 import { getT1URL, getMaskURL, downloadMask } from '../api/client.js';
 
-// Umbral clínico del fold 3 (CNN deepmriprep) — mantener en sync con backend
-// config.py CNN_CONFIG.clinical_threshold. Se usa para dibujar el marcador
-// vertical en la barra de probabilidad y para detectar casos ambiguos.
+// Fold 3 clinical threshold (deepmriprep CNN) — keep in sync with the
+// backend config.py CNN_CONFIG.clinical_threshold. Used to draw the vertical
+// marker on the probability bar and to detect ambiguous cases.
 const CLINICAL_THRESHOLD_PCT = 68.75;
 
 const ResultsScreen = ({ model, info, file, jobId, result, onReset }) => {
@@ -16,23 +16,23 @@ const ResultsScreen = ({ model, info, file, jobId, result, onReset }) => {
   const [gv, setGv] = useState(0);
   const isClass = model.type === 'classification';
 
-  // Valores derivados del result del backend (floats 0-1 → ints 0-100 para mostrar)
+  // Values derived from the backend result (floats 0-1 → ints 0-100 for display)
   const probEpi   = result ? Math.round(result.prob_epilepsy * 100) : 0;
   const probCtrl  = result ? Math.round(result.prob_control  * 100) : 0;
   const isEpi     = result?.prediction === 'epilepsy';
-  // El gauge muestra la CONFIANZA EN LA CLASE PREDICHA, no prob_epi:
-  // - Si predicción = epi → gauge = prob_epi (alta cuando el modelo está seguro)
-  // - Si predicción = control → gauge = prob_ctrl (también "qué tan seguro estamos del control")
-  // Esto evita el bug visual donde un control predicho por umbral clínico
-  // mostraba 69% en verde aunque la confianza real en control era 31%.
+  // The gauge shows CONFIDENCE IN THE PREDICTED CLASS, not prob_epi:
+  // - If prediction = epi → gauge = prob_epi (high when the model is confident)
+  // - If prediction = control → gauge = prob_ctrl (also "how confident we are in control")
+  // This avoids the visual bug where a control predicted by clinical threshold
+  // showed 69% in green even though the actual confidence in control was 31%.
   const confidencePct = result ? Math.round(result.confidence * 100) : 0;
 
-  // Caso ambiguo: P(epi) > 50% (el modelo "cree" que es epi) pero por debajo
-  // del umbral clínico (no se clasifica como tal). Estos casos merecen revisión
-  // humana — el modelo está en su zona de incertidumbre.
+  // Ambiguous case: P(epi) > 50% (the model "thinks" it's epi) but below the
+  // clinical threshold (not classified as such). These cases deserve human
+  // review — the model is in its uncertainty zone.
   const isAmbiguous = isClass && !isEpi && result && (result.prob_epilepsy * 100) >= 50;
 
-  // Métricas del modelo (fold 0). Tuplas [labelKey, displayValue].
+  // Model metrics (fold 0). Tuples [labelKey, displayValue].
   const modelMetrics = result ? [
     ['aucRoc',      `${(result.model_auc         * 100).toFixed(1)} %`],
     ['sensitivity', `${(result.model_sensitivity * 100).toFixed(1)} %`],
@@ -83,7 +83,7 @@ const ResultsScreen = ({ model, info, file, jobId, result, onReset }) => {
             `${t('report.mask').padEnd(20)} ${t('report.maskAvail')}`,
           ].filter(Boolean).join('\n'),
       '',
-      // Métricas del modelo: clasificación o segmentación
+      // Model metrics: classification or segmentation
       t('report.sectionMetrics'),
       ...(isClass
         ? modelMetrics.map(([k, v]) => `${t(`metrics.${k}`).padEnd(18)}${v}`)
@@ -126,7 +126,7 @@ const ResultsScreen = ({ model, info, file, jobId, result, onReset }) => {
     URL.revokeObjectURL(a.href);
   };
 
-  // Clave de la nota de fold según modelo (solo deepmriprep por ahora)
+  // Fold-note key per model (only deepmriprep for now)
   const foldNoteKey = `results.foldNote.${model.id}`;
   const hasFoldNote = model.id === 'deepmriprep';
 
@@ -187,7 +187,7 @@ const ResultsScreen = ({ model, info, file, jobId, result, onReset }) => {
                   </div>
                   <div className="pbt" style={{ position: 'relative', overflow: 'visible' }}>
                     <div className="pbf" style={{ width: `${probEpi}%`, background: 'var(--bad)' }} />
-                    {/* Marcador vertical del umbral clínico */}
+                    {/* Vertical marker for the clinical threshold */}
                     <div className="threshold-marker" style={{ left: `${CLINICAL_THRESHOLD_PCT}%` }} />
                     <div className="threshold-marker-label" style={{ left: `${CLINICAL_THRESHOLD_PCT}%` }}>
                       ↑ {t('results.thresholdMarker')}
@@ -225,7 +225,7 @@ const ResultsScreen = ({ model, info, file, jobId, result, onReset }) => {
           </div>
         ) : (
           <div>
-            {/* ── Verdict banner: clasificación derivada de la máscara ───── */}
+            {/* ── Verdict banner: classification derived from the mask ──── */}
             {result?.prediction && (
               <div className={`seg-verdict ${isEpi ? 'sv-pos' : 'sv-neg'}`}>
                 <div className="seg-verdict-main">
@@ -252,14 +252,14 @@ const ResultsScreen = ({ model, info, file, jobId, result, onReset }) => {
               </div>
             )}
 
-            {/* Layout 2-columnas: datos a la izquierda, visor cuadrado a la derecha */}
+            {/* 2-column layout: data on the left, square viewer on the right */}
             <div className="seg-layout">
               <div className="seg-data">
                 <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 10 }}>
                   {t('results.segCompletedTitle')}
                 </div>
 
-                {/* Tiles de la máscara — 2 columnas */}
+                {/* Mask tiles — 2 columns */}
                 <div className="mtiles" style={{ gridTemplateColumns: 'repeat(2,1fr)', marginBottom: 16 }}>
                   {result?.mask_volume_cm3 != null && (
                     <div className="mtile">
@@ -287,7 +287,7 @@ const ResultsScreen = ({ model, info, file, jobId, result, onReset }) => {
                   )}
                 </div>
 
-                {/* Métricas del modelo (evaluación 778 sujetos) */}
+                {/* Model metrics (evaluation on 778 subjects) */}
                 {result?.model_dsc != null && (
                   <div>
                     <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 8, color: 'var(--t2)' }}>
@@ -317,15 +317,17 @@ const ResultsScreen = ({ model, info, file, jobId, result, onReset }) => {
                         </div>
                       )}
                       {result.model_seg_ppv != null && (
-                        <div className="mtile">
+                        <div className="mtile tw">
                           <div className="mv">{(result.model_seg_ppv * 100).toFixed(1)}%</div>
                           <div className="ml">{t('metrics.ppv')}</div>
+                          <div className="tt">{t('metrics.ppvTooltip')}</div>
                         </div>
                       )}
                       {result.model_seg_npv != null && (
-                        <div className="mtile">
+                        <div className="mtile tw">
                           <div className="mv">{(result.model_seg_npv * 100).toFixed(1)}%</div>
                           <div className="ml">{t('metrics.npv')}</div>
+                          <div className="tt">{t('metrics.npvTooltip')}</div>
                         </div>
                       )}
                     </div>
@@ -350,7 +352,7 @@ const ResultsScreen = ({ model, info, file, jobId, result, onReset }) => {
         )}
       </div>
 
-      {/* Features volumétricos del sujeto (solo si el backend los envió) */}
+      {/* Subject volumetric features (only if the backend sent them) */}
       {result?.gm_volume_cm3 != null && (
         <div className="card" style={{ marginBottom: 20 }}>
           <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 12 }}>{t('results.featuresTitle')}</div>

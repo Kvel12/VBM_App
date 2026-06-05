@@ -39,43 +39,30 @@ const App = () => {
     <div className="app">
       <nav className="nav">
         <div
-          style={{
-            cursor: screen !== 'processing' ? 'pointer' : 'default',
-            display: 'flex',
-            alignItems: 'center',
-            gap: 10,
-          }}
+          className="nav-left"
+          style={{ cursor: screen !== 'processing' ? 'pointer' : 'default' }}
           onClick={screen !== 'processing' ? reset : undefined}
         >
           <Brain size={32} color="var(--primary)" />
           <span className="nav-title">
             VBM <em>App</em>
           </span>
+          <span className="nav-version">{t('nav.versionBadge')}</span>
         </div>
-        <span
-          style={{
-            fontSize: 12,
-            color: 'var(--t3)',
-            background: 'var(--s2)',
-            padding: '2px 9px',
-            borderRadius: 99,
-            marginLeft: 4,
-          }}
-        >
-          {t('nav.versionBadge')}
-        </span>
 
-        <div className="nav-right">
+        {/* Center: badge + name of the chosen model */}
+        <div className="nav-center">
           {model && screen !== 'about' && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <div className="nav-model">
               <span className={`badge ${model.badge === 'segmentation' ? 'b-am' : 'b-bl'}`}>
                 {t(`badge.${model.badge}`)}
               </span>
-              <span style={{ fontSize: 13.5, color: 'var(--t2)', fontWeight: 500 }}>
-                {t(`models.${model.id}.name`)}
-              </span>
+              <span className="nav-model-name">{t(`models.${model.id}.name`)}</span>
             </div>
           )}
+        </div>
+
+        <div className="nav-right">
           <button type="button" className="nav-about" onClick={goAbout}>
             {t('nav.about')}
           </button>

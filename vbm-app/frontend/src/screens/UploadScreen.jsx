@@ -74,7 +74,7 @@ const UploadScreen = ({ model, onStart, onBack }) => {
             />
           </div>
 
-          {/* Toggle ROBEX skull stripping */}
+          {/* ROBEX skull stripping toggle */}
           <label className={`opt-toggle${uploading ? ' opt-disabled' : ''}`}>
             <input
               type="checkbox"

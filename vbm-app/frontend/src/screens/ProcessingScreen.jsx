@@ -53,7 +53,7 @@ const ProcessingScreen = ({ model, info, jobId, onCancel, onDone }) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [jobId]);
 
-  // Estado por índice de paso (alineado con model.steps del frontend)
+  // Status per step index (aligned with the frontend's model.steps)
   const stepStatus = (i) => {
     const bs = backendSteps[i];
     if (!bs) return 'pend';
@@ -68,7 +68,7 @@ const ProcessingScreen = ({ model, info, jobId, onCancel, onDone }) => {
   const allDone = jobStatus === 'completed';
   const hasError = jobStatus === 'error';
 
-  // El paso actual mostrado en "Paso X de Y"
+  // The current step displayed in "Step X of Y"
   const activeIndex = backendSteps.findIndex(s => s.status === 'in_progress');
   const doneCount   = backendSteps.filter(s => s.status === 'completed').length;
   const displayStepNum = hasError
@@ -114,13 +114,13 @@ const ProcessingScreen = ({ model, info, jobId, onCancel, onDone }) => {
             </div>
           </div>
 
-          <div className="card" style={{ textAlign: 'center', padding: 20 }}>
-            <div style={{ fontSize: 13, color: 'var(--t3)', marginBottom: 8 }}>{t('processing.generalProgress')}</div>
-            <div className="pt" style={{ marginBottom: 10 }}>
+          <div className="card" style={{ textAlign: 'center', padding: '28px 24px' }}>
+            <div style={{ fontSize: 13, color: 'var(--t3)', marginBottom: 14 }}>{t('processing.generalProgress')}</div>
+            <div className="pt" style={{ marginBottom: 16, height: 9 }}>
               <div className="pf" style={{ width: `${progress}%`, background: hasError ? 'var(--bad)' : undefined }} />
             </div>
-            <div style={{ fontWeight: 800, fontSize: 28, color: hasError ? 'var(--bad)' : 'var(--primary)' }}>{progress}%</div>
-            <div style={{ fontSize: 13, color: 'var(--t3)', marginTop: 4 }}>
+            <div style={{ fontWeight: 800, fontSize: 34, color: hasError ? 'var(--bad)' : 'var(--primary)', lineHeight: 1 }}>{progress}%</div>
+            <div style={{ fontSize: 13, color: 'var(--t3)', marginTop: 10 }}>
               {t('processing.stepNofM', {
                 cur: displayStepNum,
                 total: model.steps.length,
@@ -164,9 +164,7 @@ const ProcessingScreen = ({ model, info, jobId, onCancel, onDone }) => {
                     </div>
                   </div>
                   {status === 'act' && (
-                    <span style={{ fontSize: 11.5, color: 'var(--primary)', fontWeight: 700, flexShrink: 0 }}>
-                      {t('processing.inProgress')}
-                    </span>
+                    <span className="s-badge">{t('processing.inProgress')}</span>
                   )}
                 </div>
               );

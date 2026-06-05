@@ -6,13 +6,15 @@
 //   - step (string)   → resolves steps.{step}.name / .det
 //   - metric tuple [key, value] → key resolves metrics.{key}; value is shown as-is
 //
-// Nota histórica: la primera tarjeta era SPM12/DARTEL. Se migró a deepmriprep
-// porque SPM12 producía mapas GM no reproducibles entre macOS (entrenamiento)
-// y Linux Docker (inferencia). deepmriprep es PyTorch puro → cross-platform OK.
+// Historical note: the first card was SPM12/DARTEL. We migrated to
+// deepmriprep because SPM12 produced GM maps that were not reproducible
+// between macOS (training) and Linux Docker (inference). deepmriprep is
+// pure PyTorch → cross-platform OK.
 //
-// El modelo Híbrido (CNN + SVM) se descartó: la fusión óptima sobre validación
-// dio w_CNN=1.00 — los features volumétricos globales no aportan señal sobre
-// los mapas de deepmriprep. Documentado como hallazgo experimental en la tesis.
+// The Hybrid model (CNN + SVM) was discarded: the optimal fusion on
+// validation gave w_CNN=1.00 — global volumetric features add no signal
+// on top of deepmriprep maps. Documented as an experimental finding in
+// the thesis.
 export const MODELS = [
   {
     id: 'deepmriprep',
@@ -27,7 +29,6 @@ export const MODELS = [
       ['specificity', '88.4 %'],
       ['accuracy',    '72.1 %'],
     ],
-    recommended: true,
   },
   {
     id: 'nnunet',
@@ -42,5 +43,6 @@ export const MODELS = [
       ['sensitivity', '90.5 %'],
       ['specificity', '78.9 %'],
     ],
+    recommended: true,
   },
 ];

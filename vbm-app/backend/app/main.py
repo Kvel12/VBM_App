@@ -1,6 +1,6 @@
 """
 main.py — FastAPI entrypoint
-Arranca el servidor, registra rutas y verifica assets al iniciar.
+Starts the server, registers routes and verifies assets on startup.
 """
 
 from fastapi import FastAPI
@@ -11,7 +11,7 @@ from app.config import validate_assets, DEVICE
 from app.api.routes import router
 
 
-# ─── Lifespan: se ejecuta al arrancar y al cerrar ─────────────────────────────
+# ─── Lifespan: runs at startup and shutdown ──────────────────────────────────
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # ── Startup ──────────────────────────────────────────────────────────────
@@ -26,13 +26,13 @@ async def lifespan(app: FastAPI):
         print(f"\n  [ADVERTENCIA] Assets faltantes al arrancar: {missing}")
         print("  El servidor arranca pero los endpoints afectados fallarán.\n")
 
-    yield  # servidor activo aquí
+    yield  # server runs here
 
     # ── Shutdown ─────────────────────────────────────────────────────────────
     print("\n  VBM App — Backend cerrando")
 
 
-# ─── Aplicación FastAPI ───────────────────────────────────────────────────────
+# ─── FastAPI application ─────────────────────────────────────────────────────
 app = FastAPI(
     title="VBM App — Backend",
     description=(
@@ -44,8 +44,8 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# ─── CORS ─────────────────────────────────────────────────────────────────────
-# En producción reemplazar ["*"] por el dominio real del frontend
+# ─── CORS ────────────────────────────────────────────────────────────────────
+# In production replace ["*"] with the real frontend domain
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -54,11 +54,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ─── Rutas ────────────────────────────────────────────────────────────────────
+# ─── Routes ──────────────────────────────────────────────────────────────────
 app.include_router(router, prefix="/api/v1")
 
 
-# ─── Health check ─────────────────────────────────────────────────────────────
+# ─── Health check ────────────────────────────────────────────────────────────
 @app.get("/health")
 def health():
     return {

@@ -1,26 +1,26 @@
 """
-nnunet.py — Pipeline de segmentación 3D-nnU-Net para localización de zonas
-            epileptogénicas.
+nnunet.py — 3D-nnU-Net segmentation pipeline for localizing epileptogenic
+            zones.
 
-Modelo: 3d_fullres, nnUNetTrainer_250epochs, fold=all, transfer learning
-desde el checkpoint TBI de Castaño (2025). Entrenado sobre Dataset500
-(IDEAS_Epilepsy) con máscaras de resección + controles con máscaras vacías.
+Model: 3d_fullres, nnUNetTrainer_250epochs, fold=all, transfer learning from
+Castaño's TBI checkpoint (2025). Trained on Dataset500 (IDEAS_Epilepsy) with
+resection masks for patients + empty masks for controls.
 
-ARQUITECTURA del modelo:
-  - PlainConvUNet 3D, 6 stages, features [32, 64, 128, 256, 320, 320]
+Model ARCHITECTURE:
+  - 3D PlainConvUNet, 6 stages, features [32, 64, 128, 256, 320, 320]
   - patch [128, 128, 128], batch 2, spacing [1.05, 1.0, 1.0]
-  - Normalización: ZScoreNormalization
-  - Output: máscara binaria (0=fondo, 1=zona epileptogénica putativa)
+  - Normalization: ZScoreNormalization
+  - Output: binary mask (0=background, 1=putative epileptogenic zone)
 
-FLUJO en el backend (ModelType.NNUNET):
-  1. Cargando imagen T1            ← routes.py
-  2. (Opcional) ROBEX skull strip  ← routes.py (toggle use_robex)
-  3. Segmentación nnUNet           ← este módulo (inferencia 3D)
-  4. Análisis de máscara           ← este módulo (clusters, volumen)
+Backend FLOW (ModelType.NNUNET):
+  1. Loading T1 image              ← routes.py
+  2. (Optional) ROBEX skull strip  ← routes.py (use_robex toggle)
+  3. nnUNet segmentation           ← this module (3D inference)
+  4. Mask analysis                 ← this module (clusters, volume)
 
-PRESTACIONES:
-  - GPU NVIDIA: <60s por sujeto
-  - CPU: ~15-30 min por sujeto (aceptable para la app desplegable)
+PERFORMANCE:
+  - NVIDIA GPU: <60s per subject
+  - CPU: ~15-30 min per subject (acceptable for the deployable app)
 """
 
 import time
@@ -41,14 +41,14 @@ from app.config import (
 from app.api.schemas import AnalysisResult, ModelType, StepStatus
 
 
-# ─── Singleton del predictor ──────────────────────────────────────────────────
-# nnU-Net carga ~235 MB de pesos + planes — cachearlo entre jobs ahorra mucho.
+# ─── Predictor singleton ─────────────────────────────────────────────────────
+# nnU-Net loads ~235 MB of weights + plans — caching it across jobs saves a lot.
 _predictor = None
 
 
 def _setup_model_folder() -> Path:
     """
-    nnU-Net espera una estructura específica al llamar
+    nnU-Net expects a specific structure when calling
     initialize_from_trained_model_folder():
 
         <model_training_output_dir>/
@@ -57,8 +57,8 @@ def _setup_model_folder() -> Path:
           plans.json
           dataset_fingerprint.json
 
-    El usuario subió los 4 archivos planos en NNUNET_MODEL_DIR. Aquí armamos
-    la estructura esperada con symlinks (o copias si symlink falla) en
+    The user dropped the 4 flat files in NNUNET_MODEL_DIR. Here we build the
+    expected structure with symlinks (or copies, if symlinks fail) inside
     /app/tmp/_nnunet_setup/.
     """
     setup_dir = TMP_DIR / "_nnunet_setup"
@@ -89,14 +89,14 @@ def _setup_model_folder() -> Path:
 
 def get_predictor():
     """
-    Carga el nnUNetPredictor singleton. Primera llamada toma ~30-60s
-    (carga pesos + construye red). Siguientes llamadas reusan el predictor.
+    Load the nnUNetPredictor singleton. First call takes ~30-60s
+    (loads weights + builds the network). Subsequent calls reuse it.
     """
     global _predictor
     if _predictor is not None:
         return _predictor
 
-    # Import perezoso — nnunetv2 es pesado.
+    # Lazy import — nnunetv2 is heavy.
     from nnunetv2.inference.predict_from_raw_data import nnUNetPredictor
 
     setup_dir = _setup_model_folder()
@@ -105,11 +105,11 @@ def get_predictor():
     t0 = time.time()
 
     use_gpu = torch.cuda.is_available()
-    # Configuración para inferencia en CPU con poca RAM (~2-4 GB Docker):
-    #  - tile_step_size=0.7  → menos parches solapados (era 0.5)
-    #  - use_mirroring=False → desactiva TTA con flips (4× menos memoria)
-    # Pérdida esperada en DSC: ~1-2 pts. Aceptable para una app interactiva
-    # frente al beneficio de no morir por OOM.
+    # Configuration for CPU inference with low RAM (~2-4 GB in Docker):
+    #  - tile_step_size=0.7  → fewer overlapping patches (was 0.5)
+    #  - use_mirroring=False → disables flip-based TTA (4× less memory)
+    # Expected loss in DSC: ~1-2 pts. Acceptable for an interactive app
+    # in exchange for not dying from OOM.
     predictor = nnUNetPredictor(
         tile_step_size=0.7,
         use_gaussian=True,
@@ -132,24 +132,24 @@ def get_predictor():
     return predictor
 
 
-# ─── Pipeline público ────────────────────────────────────────────────────────
+# ─── Public pipeline ─────────────────────────────────────────────────────────
 
 def run(brain_path: Path, job_id: str,
         update_step: Callable, metadata: dict) -> AnalysisResult:
     """
-    Pipeline nnUNet completo.
+    Full nnUNet pipeline.
 
     Args:
-        brain_path:  T1 (cruda o post-ROBEX según toggle use_robex).
-        job_id:      ID del job.
+        brain_path:  T1 (raw or post-ROBEX depending on the use_robex toggle).
+        job_id:      Job ID.
         update_step: callback(job_id, step_num, StepStatus, msg=None)
-        metadata:    dict con test_name, patient_name, notes.
+        metadata:    dict with test_name, patient_name, notes.
     """
     brain_path = Path(brain_path)
     job_dir    = TMP_DIR / job_id
     job_dir.mkdir(parents=True, exist_ok=True)
 
-    # ── Paso 3: Inferencia nnUNet ────────────────────────────────────────────
+    # ── Step 3: nnUNet inference ─────────────────────────────────────────────
     update_step(job_id, 3, StepStatus.IN_PROGRESS,
                 f"Segmentación 3D nnU-Net ({'GPU' if torch.cuda.is_available() else 'CPU'})...")
     try:
@@ -161,7 +161,7 @@ def run(brain_path: Path, job_id: str,
     update_step(job_id, 3, StepStatus.COMPLETED,
                 f"máscara: {mask_path.name}")
 
-    # ── Paso 4: Análisis de la máscara ──────────────────────────────────────
+    # ── Step 4: Mask analysis ────────────────────────────────────────────────
     update_step(job_id, 4, StepStatus.IN_PROGRESS,
                 "Análisis de clusters y volumetría...")
     try:
@@ -174,38 +174,39 @@ def run(brain_path: Path, job_id: str,
                 f"{mask_stats['n_clusters']} cluster(s), "
                 f"{mask_stats['mask_volume_cm3']:.2f} cm³ totales")
 
-    # ── Resultado ────────────────────────────────────────────────────────────
-    # Para que /t1/{job_id} pueda servir el archivo, conservamos el T1 como
-    # `t1.nii.gz` en job_dir. Si vino sin .gz lo comprimimos al vuelo para
-    # que NiiVue lo cargue uniforme.
+    # ── Result ───────────────────────────────────────────────────────────────
+    # So /t1/{job_id} can serve the file, we keep the T1 as `t1.nii.gz` in
+    # job_dir. If it arrived without .gz we compress it on the fly so NiiVue
+    # loads it uniformly.
     t1_dst_name = "t1.nii.gz"
     t1_dst      = job_dir / t1_dst_name
     if not t1_dst.exists():
         _copy_as_nii_gz(brain_path, t1_dst)
 
-    # ── Clasificación derivada de la máscara ──────────────────────────────
-    # Regla del notebook de entrenamiento: cualquier voxel segmentado cuenta
-    # como "epilepsia detectada" (tasa de detección 0.9051). Una máscara
-    # vacía clasifica como "control" (especificidad 0.7890). NO usamos un
-    # umbral de volumen mínimo — eso degradaría la sensibilidad reportada.
+    # ── Classification derived from the mask ──────────────────────────────
+    # Training notebook rule: any segmented voxel counts as
+    # "epilepsy detected" (detection rate 0.9051). An empty mask classifies
+    # as "control" (specificity 0.7890). We do NOT apply a minimum-volume
+    # threshold — that would degrade the reported sensitivity.
     is_epi      = mask_stats["mask_voxels"] > 0
     prediction  = "epilepsy" if is_epi else "control"
 
-    # "Confianza" = sensibilidad/especificidad del modelo a nivel sujeto para
-    # la clase predicha. No es una probabilidad bayesiana real (nnUNet no la
-    # produce); es la métrica más honesta que podemos asignar sin invertarla.
+    # "Confidence" = subject-level sensitivity/specificity of the model for
+    # the predicted class. It is not a true Bayesian probability (nnUNet
+    # does not produce one); it is the most honest metric we can attach
+    # without making one up.
     confidence  = (NNUNET_METRICS["sensitivity"] if is_epi
                    else NNUNET_METRICS["specificity"])
     prob_epi    = NNUNET_METRICS["sensitivity"] if is_epi else (1 - NNUNET_METRICS["specificity"])
     prob_ctrl   = 1 - prob_epi
 
     return AnalysisResult(
-        # Predicción derivada
+        # Derived prediction
         prediction          = prediction,
         confidence          = confidence,
         prob_epilepsy       = prob_epi,
         prob_control        = prob_ctrl,
-        # Segmentación
+        # Segmentation
         mask_filename       = mask_path.name,
         t1_filename         = t1_dst_name,
         mask_voxels         = mask_stats["mask_voxels"],
@@ -229,19 +230,19 @@ def run(brain_path: Path, job_id: str,
 
 def _run_nnunet_inference(t1_path: Path, job_dir: Path) -> Path:
     """
-    Llama al predictor con un solo T1 y devuelve el path a la máscara generada.
+    Call the predictor with a single T1 and return the path to the generated mask.
 
-    nnU-Net espera input como lista de listas (multi-channel support):
+    nnU-Net expects input as a list of lists (multi-channel support):
         [[t1_path]]   — single channel T1
-    Devuelve un .nii.gz con la máscara binaria (0/1).
+    Returns a .nii.gz with the binary mask (0/1).
     """
     predictor = get_predictor()
 
     out_dir = job_dir / "nnunet_out"
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    # Renombrar el T1 al formato nnUNet (<case>_0000.nii.gz) para que la
-    # salida tenga un nombre limpio (<case>.nii.gz).
+    # Rename the T1 to the nnUNet format (<case>_0000.nii.gz) so the output
+    # has a clean name (<case>.nii.gz).
     case_id     = "subject"
     case_input  = out_dir / f"{case_id}_0000.nii.gz"
     if not case_input.exists():
@@ -252,20 +253,20 @@ def _run_nnunet_inference(t1_path: Path, job_dir: Path) -> Path:
     print(f"[nnUNet] Inferencia sobre {t1_path.name} → {expected_output.name}")
     t0 = time.time()
 
-    # ── Camino "low-level" sin multiprocessing ─────────────────────────────
-    # predict_from_files (con o sin _sequential) usa internamente workers de
-    # multiprocessing para preprocess/export. Cuando uno de esos workers
-    # llama os._exit(0) (caso típico tras exportar), termina TODO el proceso
-    # padre → uvicorn muere → JOBS pierde el job → 404.
+    # ── "Low-level" path without multiprocessing ───────────────────────────
+    # predict_from_files (with or without _sequential) uses multiprocessing
+    # workers internally for preprocess/export. When one of those workers
+    # calls os._exit(0) (typical after exporting), it terminates the WHOLE
+    # parent process → uvicorn dies → JOBS loses the job → 404.
     #
-    # predict_single_npy_array es la API in-process: le paso un np.ndarray,
-    # me devuelve un np.ndarray. Yo me encargo de la I/O. CERO multiprocessing.
+    # predict_single_npy_array is the in-process API: I hand it a np.ndarray
+    # and it returns a np.ndarray. I handle I/O myself. ZERO multiprocessing.
     img      = nib.load(str(case_input))
     data     = np.asarray(img.dataobj, dtype=np.float32)
     affine   = img.affine
-    # nnUNet espera shape (C, X, Y, Z) — añadimos canal
+    # nnUNet expects shape (C, X, Y, Z) — add the channel dim
     input_4d = data[None, :, :, :]
-    # `spacing`: tamaño del voxel en mm (X, Y, Z) — derivado del affine
+    # `spacing`: voxel size in mm (X, Y, Z) — derived from the affine
     voxel_sz = tuple(float(s) for s in np.sqrt((affine[:3, :3] ** 2).sum(axis=0)))
     image_props = {"spacing": voxel_sz}
 
@@ -273,10 +274,10 @@ def _run_nnunet_inference(t1_path: Path, job_dir: Path) -> Path:
         input_image       = input_4d,
         image_properties  = image_props,
         segmentation_previous_stage = None,
-        output_file_truncated       = None,   # devuelve el array, no escribe
+        output_file_truncated       = None,   # returns the array, does not write
         save_or_return_probabilities= False,
     )
-    # seg es un np.ndarray (X, Y, Z) con la máscara binaria
+    # seg is a np.ndarray (X, Y, Z) with the binary mask
     seg_img = nib.Nifti1Image(seg.astype(np.uint8), affine, header=img.header)
     seg_img.set_data_dtype(np.uint8)
     nib.save(seg_img, str(expected_output))
@@ -294,14 +295,14 @@ def _run_nnunet_inference(t1_path: Path, job_dir: Path) -> Path:
 
 def _analyze_mask(mask_path: Path) -> dict:
     """
-    Análisis post-segmentación: conteo de voxeles, volumen, clusters conexos.
+    Post-segmentation analysis: voxel count, volume, connected clusters.
     """
     img  = nib.load(str(mask_path))
     data = np.asarray(img.dataobj, dtype=np.uint8)
 
-    # Voxel volume en mm³
+    # Voxel volume in mm³
     vox     = np.sqrt((img.affine[:3, :3] ** 2).sum(axis=0))
-    vox_vol = float(np.prod(vox))   # mm³ por voxel
+    vox_vol = float(np.prod(vox))   # mm³ per voxel
 
     mask    = data > 0
     n_vox   = int(mask.sum())
@@ -315,7 +316,7 @@ def _analyze_mask(mask_path: Path) -> dict:
             structure = np.ones((3, 3, 3), dtype=np.uint8)  # 26-connectivity
             labeled, n_clusters = label(mask, structure=structure)
             if n_clusters > 0:
-                sizes = np.bincount(labeled.ravel())[1:]  # ignora fondo
+                sizes = np.bincount(labeled.ravel())[1:]  # ignore background
                 largest_cluster_cm3 = round(float(sizes.max() * vox_vol / 1000.0), 4)
         except Exception as e:
             print(f"[nnUNet] Análisis de clusters falló (no crítico): {e}")
@@ -331,8 +332,8 @@ def _analyze_mask(mask_path: Path) -> dict:
 
 def _copy_as_nii_gz(src: Path, dst: Path) -> None:
     """
-    Copia un .nii o .nii.gz a destino .nii.gz (comprime si es necesario).
-    Idempotente: si dst ya existe, no hace nada.
+    Copy a .nii or .nii.gz to a .nii.gz destination (compress if needed).
+    Idempotent: if dst already exists, do nothing.
     """
     if dst.exists():
         return
