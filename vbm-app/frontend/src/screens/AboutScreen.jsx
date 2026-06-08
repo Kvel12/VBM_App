@@ -34,6 +34,16 @@ const AboutScreen = ({ onBack }) => {
             </div>
           </div>
           <div>
+            <div className="about-label">{t('about.teamDirector')}</div>
+            <div className="about-value">{t('about.teamDirectorName')}</div>
+          </div>
+          <div>
+            <div className="about-label">{t('about.teamCoDirectors')}</div>
+            <div className="about-value" style={{ whiteSpace: 'pre-line' }}>
+              {t('about.teamCoDirectorsNames')}
+            </div>
+          </div>
+          <div>
             <div className="about-label">{t('about.teamLab')}</div>
             <div className="about-value">{t('about.teamLabName')}</div>
           </div>

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Brain from './components/Brain.jsx';
 import Footer from './components/Footer.jsx';
 import LanguageToggle from './components/LanguageToggle.jsx';
@@ -8,6 +8,7 @@ import ProcessingScreen from './screens/ProcessingScreen.jsx';
 import ResultsScreen from './screens/ResultsScreen.jsx';
 import AboutScreen from './screens/AboutScreen.jsx';
 import { useT } from './i18n/LanguageContext.jsx';
+import { getAssetsStatus } from './api/client.js';
 
 const App = () => {
   const t = useT();
@@ -18,6 +19,15 @@ const App = () => {
   const [file, setFile] = useState(null);
   const [jobId, setJobId] = useState(null);
   const [result, setResult] = useState(null);
+  // Asset availability — fetched once at mount, used to disable cards/toggles
+  // when the trained models or ROBEX binary are missing on the host volume.
+  const [assets, setAssets] = useState(null);
+
+  useEffect(() => {
+    getAssetsStatus()
+      .then(setAssets)
+      .catch((e) => console.warn('[assets] could not fetch status:', e));
+  }, []);
 
   const reset = () => {
     setModel(null);
@@ -54,9 +64,11 @@ const App = () => {
           <span className="nav-version">{t('nav.versionBadge')}</span>
         </div>
 
-        {/* Center: badge + name of the chosen model */}
+        {/* Center: badge + name of the chosen model.
+            Shown only while the user is actively inside a model flow
+            (upload / processing / results) — hidden on home and about. */}
         <div className="nav-center">
-          {model && screen !== 'about' && (
+          {model && ['upload', 'processing', 'results'].includes(screen) && (
             <div className="nav-model">
               <span className={`badge ${model.badge === 'segmentation' ? 'b-am' : 'b-bl'}`}>
                 {t(`badge.${model.badge}`)}
@@ -77,6 +89,7 @@ const App = () => {
       <main className="main">
         {screen === 'home' && (
           <HomeScreen
+            assets={assets}
             onSelect={(m) => {
               setModel(m);
               setScreen('upload');
@@ -86,6 +99,7 @@ const App = () => {
         {screen === 'upload' && (
           <UploadScreen
             model={model}
+            assets={assets}
             onStart={(i, f, newJobId) => {
               setInfo(i);
               setFile(f);

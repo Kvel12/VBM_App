@@ -10,6 +10,21 @@ import { getT1URL, getMaskURL, downloadMask } from '../api/client.js';
 // marker on the probability bar and to detect ambiguous cases.
 const CLINICAL_THRESHOLD_PCT = 68.75;
 
+// Format seconds as "Mm Ss" (e.g. "5m 23s") or "Xs" when under a minute.
+// Used both in the UI tile and the exported .txt report.
+const fmtTime = (seconds) => {
+  if (seconds == null) return '—';
+  const total = Math.round(seconds);
+  const m = Math.floor(total / 60);
+  const s = total % 60;
+  return m ? `${m}m ${String(s).padStart(2, '0')}s` : `${s}s`;
+};
+
+// Padded "Label : value" row for the exported plain-text report.
+// Keeps all colons in the same column for a clean look.
+const row = (label, value, width = 22) =>
+  `  ${label.padEnd(width)}: ${value}`;
+
 const ResultsScreen = ({ model, info, file, jobId, result, onReset }) => {
   const t = useT();
   const [lang] = useLang();
@@ -49,74 +64,100 @@ const ResultsScreen = ({ model, info, file, jobId, result, onReset }) => {
   const genTxt = () => {
     const locale = lang === 'en' ? 'en-US' : 'es-CO';
     const now = new Date().toLocaleString(locale);
-    const sep = '═══════════════════════════════════════════════';
-    const lines = [
-      sep,
+    const sepEq   = '═'.repeat(60);
+    const sepDash = '─'.repeat(60);
+
+    // ── Header block (always present) ────────────────────────────────────
+    const header = [
+      sepEq,
       `   ${t('report.header')}`,
-      sep, '',
-      `${t('report.date').padEnd(14)} ${now}`,
-      `${t('report.model').padEnd(14)} ${t(`models.${model.id}.fullName`)}`,
-      `${t('report.test').padEnd(14)} ${info.test}`,
-      `${t('report.patient').padEnd(14)} ${info.patient || t('report.notSpecified')}`,
-      `${t('report.file').padEnd(14)} ${file?.name || ''}`, '',
-      t('report.sectionResult'),
-      isClass
-        ? [
-            `${t('report.class').padEnd(14)} ${isEpi ? t('report.classEpi') : t('report.classControl')}`,
-            `${t('report.probEpi').padEnd(18)} ${probEpi} %`,
-            `${t('report.probControl').padEnd(18)} ${probCtrl} %`,
-          ].join('\n')
-        : [
-            `${t('report.type').padEnd(14)} ${t('report.typeSeg')}`,
-            result?.mask_volume_cm3 != null
-              ? `${t('results.maskVolume').padEnd(20)} ${result.mask_volume_cm3.toFixed(2)} cm³`
-              : '',
-            result?.n_clusters != null
-              ? `${t('results.nClusters').padEnd(20)} ${result.n_clusters}`
-              : '',
-            result?.largest_cluster_cm3 != null
-              ? `${t('results.largestCluster').padEnd(20)} ${result.largest_cluster_cm3.toFixed(2)} cm³`
-              : '',
-            result?.mask_voxels != null
-              ? `${t('results.maskVoxels').padEnd(20)} ${result.mask_voxels.toLocaleString()}`
-              : '',
-            `${t('report.mask').padEnd(20)} ${t('report.maskAvail')}`,
-          ].filter(Boolean).join('\n'),
+      sepEq,
       '',
-      // Model metrics: classification or segmentation
-      t('report.sectionMetrics'),
-      ...(isClass
-        ? modelMetrics.map(([k, v]) => `${t(`metrics.${k}`).padEnd(18)}${v}`)
-        : [
-            result?.model_dsc != null
-              ? `${t('metrics.dscMean').padEnd(22)} ${(result.model_dsc * 100).toFixed(1)} %`
-              : '',
-            result?.model_hd95 != null
-              ? `${t('metrics.hausdorff95').padEnd(22)} ${result.model_hd95.toFixed(2)} mm`
-              : '',
-            result?.model_seg_sensitivity != null
-              ? `${t('metrics.sensitivity').padEnd(22)} ${(result.model_seg_sensitivity * 100).toFixed(1)} %`
-              : '',
-            result?.model_seg_specificity != null
-              ? `${t('metrics.specificity').padEnd(22)} ${(result.model_seg_specificity * 100).toFixed(1)} %`
-              : '',
-            result?.model_seg_ppv != null
-              ? `${t('metrics.ppv').padEnd(22)} ${(result.model_seg_ppv * 100).toFixed(1)} %`
-              : '',
-            result?.model_seg_npv != null
-              ? `${t('metrics.npv').padEnd(22)} ${(result.model_seg_npv * 100).toFixed(1)} %`
-              : '',
-          ].filter(Boolean)),
-      result?.gm_volume_cm3 != null ? `\n${t('results.gmVolume').padEnd(18)}${result.gm_volume_cm3.toFixed(2)} cm³` : '',
-      result?.processing_time_s != null ? `${t('results.processingTime').padEnd(18)}${result.processing_time_s} s` : '',
+      row(t('report.date'),    now),
+      row(t('report.model'),   t(`models.${model.id}.fullName`)),
+      row(t('report.test'),    info.test),
+      row(t('report.patient'), info.patient || t('report.notSpecified')),
+      row(t('report.file'),    file?.name || ''),
+      result?.processing_time_s != null
+        ? row(t('results.processingTime'), fmtTime(result.processing_time_s))
+        : null,
       '',
+    ];
+
+    // ── Result block (classification OR segmentation) ────────────────────
+    const resultBlock = [t('report.sectionResult')];
+    if (isClass) {
+      resultBlock.push(
+        row(t('report.class'),
+            isEpi ? t('report.classEpi') : t('report.classControl')),
+        row(t('report.probEpi'),     `${probEpi} %`),
+        row(t('report.probControl'), `${probCtrl} %`),
+      );
+    } else {
+      resultBlock.push(
+        row(t('report.type'), t('report.typeSeg')),
+        result?.mask_volume_cm3 != null
+          ? row(t('results.maskVolume'),     `${result.mask_volume_cm3.toFixed(2)} cm³`) : null,
+        result?.n_clusters != null
+          ? row(t('results.nClusters'),      String(result.n_clusters)) : null,
+        result?.largest_cluster_cm3 != null && result?.n_clusters > 1
+          ? row(t('results.largestCluster'), `${result.largest_cluster_cm3.toFixed(2)} cm³`) : null,
+        result?.mask_voxels != null
+          ? row(t('results.maskVoxels'),     result.mask_voxels.toLocaleString()) : null,
+        row(t('report.mask'), t('report.maskAvail')),
+      );
+    }
+    resultBlock.push('');
+
+    // ── Metrics block ────────────────────────────────────────────────────
+    const metricsBlock = [t('report.sectionMetrics')];
+    if (isClass) {
+      modelMetrics.forEach(([k, v]) => metricsBlock.push(row(t(`metrics.${k}`), v)));
+    } else {
+      if (result?.model_dsc != null)
+        metricsBlock.push(row(t('metrics.dscMean'),
+          `${(result.model_dsc * 100).toFixed(1)} %`));
+      if (result?.model_hd95 != null)
+        metricsBlock.push(row(t('metrics.hausdorff95'),
+          `${result.model_hd95.toFixed(2)} mm`));
+      if (result?.model_seg_sensitivity != null)
+        metricsBlock.push(row(t('metrics.sensitivity'),
+          `${(result.model_seg_sensitivity * 100).toFixed(1)} %`));
+      if (result?.model_seg_specificity != null)
+        metricsBlock.push(row(t('metrics.specificity'),
+          `${(result.model_seg_specificity * 100).toFixed(1)} %`));
+      if (result?.model_seg_ppv != null)
+        metricsBlock.push(row(t('metrics.ppv'),
+          `${(result.model_seg_ppv * 100).toFixed(1)} %`));
+      if (result?.model_seg_npv != null)
+        metricsBlock.push(row(t('metrics.npv'),
+          `${(result.model_seg_npv * 100).toFixed(1)} %`));
+    }
+
+    // Optional: subject volumetric features (only deepmriprep gives them)
+    if (result?.gm_volume_cm3 != null) {
+      metricsBlock.push('', row(t('results.gmVolume'),
+        `${result.gm_volume_cm3.toFixed(2)} cm³`));
+    }
+    metricsBlock.push('');
+
+    // ── Footer with disclaimer ───────────────────────────────────────────
+    const footer = [
+      sepDash,
       t('report.sectionWarn'),
       t('report.warn1'),
       t('report.warn2'),
-      info.notes ? `\n${t('report.notes')} ${info.notes}` : '',
-      '', sep,
+      info.notes ? `\n${t('report.notes')} ${info.notes}` : null,
+      '',
+      sepEq,
       t('report.footerLine'),
-    ].filter((l) => l !== undefined && l !== '').concat(['']).join('\n');
+      sepEq,
+      '',
+    ];
+
+    const lines = [...header, ...resultBlock, ...metricsBlock, ...footer]
+      .filter((l) => l !== null && l !== undefined)
+      .join('\n');
 
     const blob = new Blob([lines], { type: 'text/plain;charset=utf-8' });
     const a = document.createElement('a');
@@ -375,7 +416,7 @@ const ResultsScreen = ({ model, info, file, jobId, result, onReset }) => {
             )}
             {result.processing_time_s != null && (
               <div className="mtile">
-                <div className="mv">{result.processing_time_s}s</div>
+                <div className="mv">{fmtTime(result.processing_time_s)}</div>
                 <div className="ml">{t('results.processingTime')}</div>
               </div>
             )}

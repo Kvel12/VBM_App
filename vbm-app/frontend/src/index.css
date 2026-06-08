@@ -114,6 +114,22 @@ body { font-family:'Outfit',system-ui,sans-serif; background:var(--bg); color:va
   background:var(--primary); color:#fff; padding:3px 15px; border-radius:99px;
   font-size:11px; font-weight:700; letter-spacing:.5px; white-space:nowrap;
 }
+.rec-lbl-bad { background:var(--bad); }
+
+.mcard.disabled {
+  cursor:not-allowed; opacity:.55; filter:grayscale(35%);
+  border-color:var(--border); background:var(--surface);
+}
+.mcard.disabled:hover {
+  border-color:var(--border); transform:none; box-shadow:var(--sh);
+}
+
+.opt-warn {
+  margin-top:8px; padding:8px 12px; border-radius:8px;
+  background:var(--badl); border:1px solid oklch(.88 .08 25);
+  color:var(--bad); font-size:12.5px; line-height:1.5;
+}
+.opt-warn a { color:var(--bad); font-weight:600; word-break:break-all; }
 
 /* ── Badges ── */
 .badge { display:inline-flex; align-items:center; gap:4px; padding:4px 10px; border-radius:99px; font-size:12px; font-weight:600; }

@@ -16,7 +16,7 @@ from typing import Annotated
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException, BackgroundTasks
 from fastapi.responses import FileResponse
 
-from app.config import TMP_DIR, API_CONFIG
+from app.config import TMP_DIR, API_CONFIG, validate_assets
 
 # Runtime flags (set via docker-compose.yml or `docker compose run -e`)
 # KEEP_TMP_FILES=true → does not delete /app/tmp/<job_id>/ on completion,
@@ -250,71 +250,91 @@ def _pct(value):
     return f"{value * 100:.1f}%" if value is not None else "—"
 
 
+def _fmt_time(seconds):
+    """Format seconds as 'Mm Ss' (e.g. '5m 23s') or '<1m Xs' if under a minute."""
+    if seconds is None:
+        return "—"
+    s = int(round(seconds))
+    m, s = divmod(s, 60)
+    return f"{m}m {s:02d}s" if m else f"{s}s"
+
+
+def _row(label: str, value: str, width: int = 24) -> str:
+    """Pad label to width and append ': value' for consistent column alignment."""
+    return f"  {label:<{width}}: {value}"
+
+
 def _generate_report(job_id: str, result: AnalysisResult):
     """Generate a downloadable .txt report. Supports classification and segmentation."""
     report_path = TMP_DIR / f"{job_id}_report.txt"
+    sep_eq = "=" * 60
+    sep_dash = "-" * 60
+
     lines = [
-        "=" * 55,
+        sep_eq,
         "  VBM App — Reporte de Análisis",
-        "=" * 55,
-        f"  Prueba      : {result.test_name}",
-        f"  Paciente    : {result.patient_name or 'No especificado'}",
-        f"  Modelo      : {result.model_used.value}",
-        f"  Tiempo      : {result.processing_time_s} s",
-        "-" * 55,
+        sep_eq,
+        _row("Prueba",     result.test_name),
+        _row("Paciente",   result.patient_name or "No especificado"),
+        _row("Modelo",     result.model_used.value),
+        _row("Tiempo",     _fmt_time(result.processing_time_s)),
+        sep_dash,
     ]
 
     # ── CLASSIFICATION block (only if there is a prediction) ──────────────
     if result.prediction is not None:
         lines += [
             "  RESULTADO (clasificación)",
-            f"  Predicción  : {'POSIBLE EPILEPSIA' if result.prediction == 'epilepsy' else 'CONTROL'}",
-            f"  Confianza   : {_pct(result.confidence)}",
-            f"  P(Epilepsia): {_pct(result.prob_epilepsy)}",
-            f"  P(Control)  : {_pct(result.prob_control)}",
-            "-" * 55,
-            "  MÉTRICAS DEL MODELO (validación)",
-            f"  AUC-ROC     : {_pct(result.model_auc)}",
-            f"  Sensibilidad: {_pct(result.model_sensitivity)}",
-            f"  Especificidad:{_pct(result.model_specificity)}",
-            f"  Exactitud   : {_pct(result.model_accuracy)}",
+            _row("Predicción",
+                 "POSIBLE EPILEPSIA" if result.prediction == "epilepsy" else "CONTROL"),
+            _row("Confianza",        _pct(result.confidence)),
+            _row("P(Epilepsia)",     _pct(result.prob_epilepsy)),
+            _row("P(Control)",       _pct(result.prob_control)),
+            sep_dash,
+            "  MÉTRICAS DEL MODELO (validación · fold 3, deepmriprep + CNN)",
+            _row("AUC-ROC",          _pct(result.model_auc)),
+            _row("Sensibilidad",     _pct(result.model_sensitivity)),
+            _row("Especificidad",    _pct(result.model_specificity)),
+            _row("Exactitud",        _pct(result.model_accuracy)),
         ]
         if result.gm_volume_cm3:
             lines += [
-                "-" * 55,
+                sep_dash,
                 "  FEATURES VOLUMÉTRICOS",
-                f"  Volumen GM  : {result.gm_volume_cm3:.2f} cm³",
-                f"  Densidad GM : {result.gm_mean_density:.4f}",
-                f"  Vóxeles GM  : {result.gm_voxels}",
+                _row("Volumen GM",       f"{result.gm_volume_cm3:.2f} cm³"),
+                _row("Densidad GM",      f"{result.gm_mean_density:.4f}"),
+                _row("Vóxeles GM",       f"{result.gm_voxels:,}"),
             ]
 
     # ── SEGMENTATION block (only if there is a mask) ──────────────────────
     if result.mask_filename is not None:
+        hd95 = (f"{result.model_hd95:.2f} mm"
+                if result.model_hd95 is not None else "—")
         lines += [
-            "  RESULTADO (segmentación nnU-Net)",
-            f"  Vóxeles máscara    : {result.mask_voxels}",
-            f"  Volumen total      : {result.mask_volume_cm3:.2f} cm³",
-            f"  Clusters conexos   : {result.n_clusters}",
-            f"  Cluster más grande : {result.largest_cluster_cm3:.2f} cm³",
-            "-" * 55,
-            "  MÉTRICAS DEL MODELO (evaluación · 778 sujetos)",
-            f"  DSC (mediana)      : {_pct(result.model_dsc)}",
-            f"  Hausdorff 95% (mediana): "
-            + (f"{result.model_hd95:.2f} mm" if result.model_hd95 is not None else "—"),
-            f"  Sensibilidad (sujeto): {_pct(result.model_seg_sensitivity)}",
-            f"  Especificidad (sujeto): {_pct(result.model_seg_specificity)}",
-            f"  VPP                : {_pct(result.model_seg_ppv)}",
-            f"  VPN                : {_pct(result.model_seg_npv)}",
+            "  RESULTADO (segmentación nnU-Net 3D fullres)",
+            _row("Vóxeles máscara",     f"{result.mask_voxels:,}" if result.mask_voxels is not None else "—"),
+            _row("Volumen total",       f"{result.mask_volume_cm3:.2f} cm³"),
+            _row("Clusters conexos",    str(result.n_clusters)),
+            _row("Cluster más grande",  f"{result.largest_cluster_cm3:.2f} cm³"),
+            sep_dash,
+            "  MÉTRICAS DEL MODELO (evaluación · 778 sujetos IDEAS)",
+            _row("DSC (mediana)",         _pct(result.model_dsc)),
+            _row("Hausdorff 95% (med.)",  hd95),
+            _row("Sensibilidad (sujeto)", _pct(result.model_seg_sensitivity)),
+            _row("Especificidad (sujeto)",_pct(result.model_seg_specificity)),
+            _row("VPP",                   _pct(result.model_seg_ppv)),
+            _row("VPN",                   _pct(result.model_seg_npv)),
         ]
 
     if result.notes:
-        lines += ["-" * 55, "  NOTAS CLÍNICAS", f"  {result.notes}"]
+        lines += [sep_dash, "  NOTAS CLÍNICAS", f"  {result.notes}"]
+
     lines += [
-        "=" * 55,
+        sep_eq,
         "  AVISO MÉDICO",
         "  Este análisis es herramienta de apoyo diagnóstico",
         "  y NO reemplaza el criterio clínico especializado.",
-        "=" * 55,
+        sep_eq,
     ]
     report_path.write_text("\n".join(lines), encoding="utf-8")
     JOBS[job_id]["report_path"] = str(report_path)
@@ -369,6 +389,37 @@ def _cleanup(job_id: str):
 
 # ─── ENDPOINTS ───────────────────────────────────────────────────────────────
 
+@router.get("/assets")
+def get_assets_status():
+    """
+    Report which model weights and optional tools are available on disk.
+    The frontend uses this to disable model cards or the ROBEX toggle and
+    to show a clear message ("contact the author to receive the weights").
+
+    Returns a flat dict per model with a boolean and the list of missing
+    files. nnUNet has 4 required files; deepmriprep_cnn is a single .pt.
+    ROBEX is the optional skull-stripping binary.
+    """
+    checks = validate_assets()
+    deepmriprep_ok = bool(checks.get("cnn_model", False))
+    nnunet_files = ["nnunet_checkpoint", "nnunet_plans",
+                    "nnunet_dataset", "nnunet_fingerprint"]
+    nnunet_missing = [k for k in nnunet_files if not checks.get(k)]
+    return {
+        "deepmriprep": {
+            "ready": deepmriprep_ok,
+            "missing": [] if deepmriprep_ok else ["deepmriprep_cnn_fold3_script.pt"],
+        },
+        "nnunet": {
+            "ready": len(nnunet_missing) == 0,
+            "missing": nnunet_missing,
+        },
+        "robex": {
+            "ready": bool(checks.get("robex", False)),
+        },
+    }
+
+
 @router.post("/analyze", response_model=JobCreatedResponse)
 async def analyze(
     background_tasks: BackgroundTasks,
@@ -385,6 +436,33 @@ async def analyze(
         raise HTTPException(
             status_code=400,
             detail="Solo se aceptan archivos .nii o .nii.gz"
+        )
+
+    # Defense-in-depth asset checks. The frontend already disables cards/
+    # toggles when an asset is missing, but we re-check here so a stale
+    # cached UI or a direct API call cannot submit a job that will fail
+    # mid-pipeline. Returns 503 with a clear message so the frontend can
+    # display it to the user.
+    assets = validate_assets()
+    if model == ModelType.DEEPMRIPREP and not assets.get("cnn_model"):
+        raise HTTPException(
+            status_code=503,
+            detail="Modelo deepmriprep no disponible: el peso no está en el servidor. "
+                   "Solicítelo a kevin.alejandro.velez@correounivalle.edu.co",
+        )
+    if model == ModelType.NNUNET and not all(assets.get(k) for k in
+            ("nnunet_checkpoint", "nnunet_plans",
+             "nnunet_dataset", "nnunet_fingerprint")):
+        raise HTTPException(
+            status_code=503,
+            detail="Modelo nnUNet no disponible: faltan archivos del modelo en el servidor. "
+                   "Solicítelos a kevin.alejandro.velez@correounivalle.edu.co",
+        )
+    if use_robex and not assets.get("robex"):
+        raise HTTPException(
+            status_code=503,
+            detail="ROBEX no está instalado en el servidor. Desactive la opción o "
+                   "instale el binario en backend/vendor/ y reconstruya la imagen.",
         )
 
     # Validate size

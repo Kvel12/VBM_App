@@ -58,6 +58,16 @@ export const getReportURL = (jobId) => `${API_BASE}/report/${jobId}`;
 export const getT1URL   = (jobId) => `${API_BASE}/t1/${jobId}`;
 export const getMaskURL = (jobId) => `${API_BASE}/mask/${jobId}`;
 
+// GET /assets — reports which weights and optional tools are present on
+// disk. The frontend calls this at startup to disable model cards or the
+// ROBEX toggle when an asset is missing.
+//   { deepmriprep: {ready, missing}, nnunet: {ready, missing}, robex: {ready} }
+export const getAssetsStatus = async () => {
+  const response = await fetch(`${API_BASE}/assets`);
+  if (!response.ok) throw new Error(await parseError(response));
+  return response.json();
+};
+
 // Force-download the mask as a .nii.gz file ("Download mask" button).
 export const downloadMask = async (jobId, suggestedName) => {
   const response = await fetch(getMaskURL(jobId));

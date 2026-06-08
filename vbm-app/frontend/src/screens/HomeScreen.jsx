@@ -2,8 +2,12 @@ import Brain from '../components/Brain.jsx';
 import { MODELS } from '../data/models.js';
 import { useT } from '../i18n/LanguageContext.jsx';
 
-const HomeScreen = ({ onSelect }) => {
+const CONTACT_EMAIL = 'kevin.alejandro.velez@correounivalle.edu.co';
+
+const HomeScreen = ({ onSelect, assets }) => {
   const t = useT();
+  const isReady = (id) => !assets || assets[id]?.ready !== false;
+  const missingAny = assets && MODELS.some((m) => assets[m.id]?.ready === false);
   return (
     <div className="fu">
       <div className="hero">
@@ -27,6 +31,20 @@ const HomeScreen = ({ onSelect }) => {
         />
       </div>
 
+      {missingAny && (
+        <div className="wb" style={{ marginBottom: 24 }}>
+          <span style={{ fontSize: 20, flexShrink: 0 }}>⚠</span>
+          <div>
+            <strong>{t('home.assetsWarnTitle')}</strong>{' '}
+            {MODELS.filter((m) => assets[m.id]?.ready === false).map((m) => t(`models.${m.id}.name`)).join(', ')}.{' '}
+            {t('home.assetsWarnBody')}{' '}
+            <a href={`mailto:${CONTACT_EMAIL}`} style={{ color: 'var(--pd)', fontWeight: 600 }}>
+              {CONTACT_EMAIL}
+            </a>.
+          </div>
+        </div>
+      )}
+
       <div
         className="mgrid"
         style={{
@@ -37,9 +55,17 @@ const HomeScreen = ({ onSelect }) => {
           margin: '0 auto',
         }}
       >
-        {MODELS.map((m) => (
-          <div key={m.id} className={`mcard${m.recommended ? ' rec' : ''}`} onClick={() => onSelect(m)}>
-            {m.recommended && <div className="rec-lbl">{t('home.recommended')}</div>}
+        {MODELS.map((m) => {
+          const ready = isReady(m.id);
+          return (
+          <div
+            key={m.id}
+            className={`mcard${m.recommended ? ' rec' : ''}${ready ? '' : ' disabled'}`}
+            onClick={ready ? () => onSelect(m) : undefined}
+            title={ready ? undefined : t('home.modelUnavailable')}
+          >
+            {m.recommended && ready && <div className="rec-lbl">{t('home.recommended')}</div>}
+            {!ready && <div className="rec-lbl rec-lbl-bad">{t('home.unavailableBadge')}</div>}
             <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
               <div
                 style={{
@@ -86,7 +112,8 @@ const HomeScreen = ({ onSelect }) => {
               <span style={{ fontSize: 12.5, color: 'var(--t3)' }}>{t('home.stepsCount', { n: m.steps.length })}</span>
             </div>
           </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );

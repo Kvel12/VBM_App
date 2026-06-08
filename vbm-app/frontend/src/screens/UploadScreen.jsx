@@ -3,14 +3,20 @@ import DropZone from '../components/DropZone.jsx';
 import { useT } from '../i18n/LanguageContext.jsx';
 import { postAnalyze } from '../api/client.js';
 
-const UploadScreen = ({ model, onStart, onBack }) => {
+// Public NITRC download page for ROBEX v1.2 (requires accepting the license).
+const ROBEX_URL = 'https://www.nitrc.org/projects/robex';
+
+const UploadScreen = ({ model, assets, onStart, onBack }) => {
   const t = useT();
   const [info, setInfo] = useState({ test: '', patient: '', notes: '', useRobex: false });
   const [file, setFile] = useState(null);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState(null);
   const u = (k, v) => setInfo((p) => ({ ...p, [k]: v }));
-  const ok = file && info.test.trim() && !uploading;
+  // Force-off the toggle if ROBEX is missing on the backend.
+  const robexAvailable = !assets || assets.robex?.ready !== false;
+  const modelAvailable = !assets || assets[model.id]?.ready !== false;
+  const ok = file && info.test.trim() && !uploading && modelAvailable;
 
   const handleStart = async () => {
     setUploading(true);
@@ -75,16 +81,24 @@ const UploadScreen = ({ model, onStart, onBack }) => {
           </div>
 
           {/* ROBEX skull stripping toggle */}
-          <label className={`opt-toggle${uploading ? ' opt-disabled' : ''}`}>
+          <label className={`opt-toggle${(uploading || !robexAvailable) ? ' opt-disabled' : ''}`}>
             <input
               type="checkbox"
-              checked={info.useRobex}
+              checked={info.useRobex && robexAvailable}
               onChange={(e) => u('useRobex', e.target.checked)}
-              disabled={uploading}
+              disabled={uploading || !robexAvailable}
             />
             <div className="opt-text">
               <div className="opt-title">{t('upload.robexLabel')}</div>
               <div className="opt-hint">{t('upload.robexHint')}</div>
+              {!robexAvailable && (
+                <div className="opt-warn">
+                  ⚠ {t('upload.robexMissing')}{' '}
+                  <a href={ROBEX_URL} target="_blank" rel="noopener noreferrer">
+                    {ROBEX_URL}
+                  </a>
+                </div>
+              )}
             </div>
           </label>
 
@@ -144,6 +158,19 @@ const UploadScreen = ({ model, onStart, onBack }) => {
           </div>
         </div>
       </div>
+
+      {!modelAvailable && (
+        <div className="wb" style={{ marginTop: 18, color: 'var(--bad)', borderColor: 'oklch(.86 .09 25)', background: 'var(--badl)' }}>
+          <span style={{ flexShrink: 0 }}>⚠</span>
+          <span>
+            {t('upload.modelMissing', { model: t(`models.${model.id}.name`) })}{' '}
+            <a href="mailto:kevin.alejandro.velez@correounivalle.edu.co"
+               style={{ color: 'var(--bad)', fontWeight: 700 }}>
+              kevin.alejandro.velez@correounivalle.edu.co
+            </a>
+          </span>
+        </div>
+      )}
 
       {uploadError && (
         <div className="wb" style={{ marginTop: 18, color: 'var(--bad)', borderColor: 'oklch(.86 .09 25)', background: 'var(--badl)' }}>
